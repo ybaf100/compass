@@ -1,7 +1,7 @@
-name: verify MVP
+name: verify compass
 on:
   push:
-    branches: [main, feature/core-mvp]
+    branches: [main, 'feature/**']
   pull_request:
 
 jobs:

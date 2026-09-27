@@ -55,7 +55,9 @@ class _Map implements MapProvider {
     required ValueChanged<GeoPoint> onPicked,
     required void Function(GeoPoint, String) onNamedPlacePicked,
     required VoidCallback onLoaded,
-    required VoidCallback onGesture}) => const ColoredBox(color: Colors.blue);
+    required VoidCallback onGesture,
+    void Function(String memberId)? onMemberTapped,
+  }) => const ColoredBox(color: Colors.blue);
   @override
   Future<void> moveCamera(GeoPoint point, {double? zoom}) async {}
   @override
@@ -66,6 +68,10 @@ class _Map implements MapProvider {
   void setPinReveal(double progress) {}
   @override
   Future<void> setUserLocation(LocationFix? location, {required bool follow}) async {}
+  @override
+  Future<void> setMembers(List<MapMemberOverlay> members) async {}
+  @override
+  Future<void> setSharedPings(List<MapPingOverlay> pings) async {}
   @override
   void reset() {}
   @override

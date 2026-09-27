@@ -16,6 +16,10 @@ class CompassPanel extends StatelessWidget {
     required this.heading,
     required this.filteredHeading,
     required this.onClear,
+    this.modeLabel,
+    this.notice,
+    this.emptyMessage,
+    this.clearLabel = '목적지 해제',
   });
 
   final double progress;
@@ -25,6 +29,10 @@ class CompassPanel extends StatelessWidget {
   final HeadingReading? heading;
   final double? filteredHeading;
   final VoidCallback onClear;
+  final String? modeLabel;
+  final String? notice;
+  final String? emptyMessage;
+  final String clearLabel;
 
   static String formatDistance(double? meters) {
     if (meters == null) return '현재 위치를 확인하고 있습니다';
@@ -98,11 +106,11 @@ class CompassPanel extends StatelessWidget {
                           AnimatedSwitcher(
                             duration: const Duration(milliseconds: 240),
                             child: destination == null
-                                ? const Text(
-                                    '지도에서 목적지를 선택하세요',
-                                    key: Key('empty_destination'),
+                                ? Text(
+                                    emptyMessage ?? '지도에서 목적지를 선택하세요',
+                                    key: const Key('empty_destination'),
                                     textAlign: TextAlign.center,
-                                    style: TextStyle(
+                                    style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 17,
                                       fontWeight: FontWeight.w600,
@@ -132,6 +140,20 @@ class CompassPanel extends StatelessWidget {
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
+                            if (modeLabel != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 5),
+                                child: Text(modeLabel!, key: const Key('navigation_mode'),
+                                  style: const TextStyle(color: Color(0xFFB4CDD9),
+                                    fontSize: 12, fontWeight: FontWeight.w600)),
+                              ),
+                            if (notice != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(notice!, textAlign: TextAlign.center,
+                                  style: const TextStyle(color: Color(0xFFFFC790),
+                                    fontSize: 12)),
+                              ),
                             if ((heading?.isTrueNorth != true) && !compact)
                               Padding(
                                 padding: const EdgeInsets.only(top: 4),
@@ -158,7 +180,7 @@ class CompassPanel extends StatelessWidget {
                     child: TextButton.icon(
                       onPressed: onClear,
                       icon: const Icon(Icons.close),
-                      label: const Text('목적지 해제'),
+                      label: Text(clearLabel),
                     ),
                   ),
                 SizedBox(height: compact ? 5.0 : 12.0),

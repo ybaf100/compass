@@ -13,6 +13,26 @@ flutter analyze
 flutter run --dart-define=NAVER_MAP_CLIENT_ID=발급받은_Client_ID
 ```
 
+## 친구방 설정
+
+친구방은 Supabase의 익명 Auth, Postgres, Realtime을 사용합니다. Supabase 프로젝트에서 **Anonymous Sign-Ins**를 켜고, `supabase/migrations/202609270001_rooms.sql`을 SQL Editor에 적용하세요. 이 마이그레이션은 Room·Member·Ping 테이블, 멤버만 읽을 수 있는 RLS 정책, 멤버십을 검사하는 쓰기 RPC, Realtime publication을 설정합니다. 서비스 역할 키를 앱에 넣지 마세요.
+
+프로젝트 URL과 publishable key를 앱 실행 시 전달합니다.
+
+```bash
+bash tool/bootstrap.sh
+flutter run \
+  --dart-define=NAVER_MAP_CLIENT_ID=발급받은_Client_ID \
+  --dart-define=SUPABASE_URL=https://프로젝트.supabase.co \
+  --dart-define=SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+```
+
+`SUPABASE_URL` 또는 `SUPABASE_PUBLISHABLE_KEY`가 비어 있으면 친구방 UI에서 설정 안내를 보여주며 개인 목적지는 그대로 작동합니다. 값은 저장소에 커밋하지 않습니다. Supabase 프로젝트 자체와 데이터베이스 마이그레이션은 별도로 준비해야 하며, 클라우드 CI는 실제 프로젝트에 연결하지 않습니다.
+
+첫 친구방 사용 시 닉네임을 입력하면 익명 사용자 ID가 생성됩니다. 닉네임과 참가 중인 Room ID는 기기에 저장되고, 인증 세션은 Supabase SDK가 복원합니다. 방에서 나가면 즉시 로컬 위치 업로드와 구독을 중지합니다. 서버 나가기 요청에 실패하면 다음 연결에서 재시도합니다. 앱이 백그라운드에 있으면 위치를 업로드하지 않습니다. 친구 위치는 35초가 지나면 오래된 정보로 표시합니다.
+
+위치는 기존 GPS 입력을 재사용하며 정확도 80m 이하에서만 전송합니다. 최소 2초 간격을 두고, 8m 이상 이동하거나 8초가 지나면 갱신합니다. Ping은 최근 20개 또는 30분 이내로 제한합니다. 친구 마커의 작은 이동은 짧게 보간하며, 먼 이동과 오래된 정보는 즉시 표시합니다.
+
 네이버 클라우드 Maps에서 **Mobile Dynamic Map**을 신청한 후 Android 패키지 이름과 iOS Bundle ID를 모두 등록해야 합니다. 기본 Android 패키지 이름은 `com.example.destination_compass`입니다. 생성된 iOS Bundle ID는 `ios/Runner.xcodeproj/project.pbxproj`의 `PRODUCT_BUNDLE_IDENTIFIER`에서 확인하세요. 플랫폼 ID를 바꾼 경우 네이버 콘솔의 등록값과 일치시킵니다. Client ID는 `--dart-define`으로 주입하며 저장소에 넣지 않습니다. ID가 없어도 앱은 시작하고 이유를 보여주지만 지도는 나오지 않습니다.
 
 Android:
@@ -50,4 +70,4 @@ flutter build ios --simulator --debug --dart-define=NAVER_MAP_CLIENT_ID=발급�
 
 ## 검증
 
-`flutter test`, `flutter analyze`, `flutter build apk --debug`, `flutter build ios --simulator --debug`가 CI에 설정돼 있습니다. 현재 작업 환경에는 Flutter, Android SDK, Xcode가 없어 이 명령을 로컬에서 실행하지 못했습니다. CI와 실제 기기의 결과는 별도로 확인해야 합니다. 실기기에서는 GPS 권한 거부/재허용, 지도 인증과 핀, 가로 모드, 359°↔0° 회전, 자기장 교란, 고주사율 애니메이션을 확인하세요.
+`flutter test`, `flutter analyze`, `flutter build apk --debug`, `flutter build ios --simulator --debug`가 CI에 설정돼 있습니다. Room 테스트는 같은 가짜 저장소를 쓰는 두 클라이언트의 생성·참가·위치·Ping·공유 목적지·친구 추적·퇴장 흐름을 검증합니다. 실기기에서는 GPS 권한 거부/재허용, 지도 인증과 핀, 가로 모드, 359°↔0° 회전, 자기장 교란, 고주사율 애니메이션, 서로 다른 기기의 Room 동기화와 재연결을 확인하세요.

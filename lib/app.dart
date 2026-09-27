@@ -6,6 +6,10 @@ import 'core/network/network_monitor.dart';
 import 'destination/destination_controller.dart';
 import 'destination/destination_store.dart';
 import 'map/naver_map_provider.dart';
+import 'navigation/navigation_target.dart';
+import 'room/profile_store.dart';
+import 'room/room_controller.dart';
+import 'room/room_repository.dart';
 import 'ui/map_screen.dart';
 
 class DestinationCompassApp extends StatefulWidget {
@@ -13,10 +17,12 @@ class DestinationCompassApp extends StatefulWidget {
     super.key,
     required this.mapConfigured,
     required this.mapError,
+    required this.roomRepository,
   });
 
   final bool mapConfigured;
   final ValueNotifier<String?> mapError;
+  final RoomRepository? roomRepository;
 
   @override
   State<DestinationCompassApp> createState() => _DestinationCompassAppState();
@@ -30,9 +36,20 @@ class _DestinationCompassAppState extends State<DestinationCompassApp> {
     store: PreferencesDestinationStore(),
   );
   late final NaverMapProvider _mapProvider = NaverMapProvider();
+  late final RoomController _roomController = RoomController(
+    repository: widget.roomRepository,
+    profileStore: PreferencesProfileStore(),
+    locationChanges: _controller,
+    currentLocation: () => _controller.location,
+    hasNetwork: () => _controller.hasNetwork,
+  );
+  late final NavigationTargetController _navigation =
+      NavigationTargetController(_controller, _roomController);
 
   @override
   void dispose() {
+    _navigation.dispose();
+    _roomController.dispose();
     _controller.dispose();
     _mapProvider.dispose();
     widget.mapError.dispose();
@@ -53,6 +70,8 @@ class _DestinationCompassAppState extends State<DestinationCompassApp> {
       mapProvider: _mapProvider,
       mapConfigured: widget.mapConfigured,
       mapError: widget.mapError,
+      roomController: _roomController,
+      navigationController: _navigation,
     ),
   );
 }
