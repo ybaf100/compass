@@ -66,3 +66,41 @@ jobs:
           path: build/ios/compass-ios-simulator.zip
           if-no-files-found: error
           retention-days: 14
+
+  ios-sideload:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: bash tool/bootstrap.sh
+      - name: Build unsigned iOS device app
+        env:
+          NAVER_MAP_CLIENT_ID: ${{ vars.NAVER_MAP_CLIENT_ID }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          flutter build ios --release --no-codesign \
+            --dart-define="NAVER_MAP_CLIENT_ID=${NAVER_MAP_CLIENT_ID}" \
+            --dart-define="SUPABASE_URL=${SUPABASE_URL}" \
+            --dart-define="SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY}"
+      - name: Package and verify sideload IPA
+        run: |
+          mkdir -p build/ios/ipa/Payload
+          ditto build/ios/iphoneos/Runner.app build/ios/ipa/Payload/Runner.app
+          app=build/ios/ipa/Payload/Runner.app
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Compass' "$app/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleName Compass' "$app/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleSupportedPlatforms:0' "$app/Info.plist")" = iPhoneOS
+          lipo -archs "$app/Runner" | grep -qw arm64
+          (cd build/ios/ipa && ditto -c -k --sequesterRsrc --keepParent Payload compass-ios-sideload-unsigned.ipa)
+          unzip -tq build/ios/ipa/compass-ios-sideload-unsigned.ipa
+      - name: Upload sideload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: compass-ios-sideload-unsigned
+          path: build/ios/ipa/compass-ios-sideload-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14

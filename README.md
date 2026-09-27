@@ -70,8 +70,10 @@ flutter build ios --simulator --debug --dart-define=NAVER_MAP_CLIENT_ID=발급�
 
 ## 검증
 
-`flutter test`, `flutter analyze`, `flutter build apk --debug`, `flutter build ios --simulator --debug`가 CI에 설정돼 있습니다. 성공한 GitHub Actions 실행의 **Artifacts**에서 설치 가능한 Android 디버그 APK(`compass-android-debug`)와 iOS 시뮬레이터 앱 ZIP(`compass-ios-simulator`)을 다운로드할 수 있습니다. 시뮬레이터 ZIP 안의 `Runner.app`은 실제 iPhone/iPad에 설치할 수 없습니다. 실기기용 iOS 앱은 Apple 개발 팀의 코드 서명과 provisioning profile이 필요합니다.
+`flutter test`, `flutter analyze`, `flutter build apk --debug`, `flutter build ios --simulator --debug`, `flutter build ios --release --no-codesign`이 CI에 설정돼 있습니다. 성공한 GitHub Actions 실행의 **Artifacts**에서 Android 디버그 APK(`compass-android-debug`), iOS 시뮬레이터 앱 ZIP(`compass-ios-simulator`), iPhone/iPad 실기기용 미서명 IPA(`compass-ios-sideload-unsigned`)를 다운로드할 수 있습니다. GitHub가 IPA를 한 번 더 ZIP으로 묶으므로 내려받은 ZIP에서 `.ipa` 파일을 꺼내세요.
 
-CI 빌드에서 네이버 지도와 친구방을 사용하려면 저장소 **Settings → Secrets and variables → Actions → Variables**에 `NAVER_MAP_CLIENT_ID`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`를 등록하고 빌드를 다시 실행하세요. 값이 없는 빌드도 컴파일되지만 지도와 친구방이 동작하지 않습니다. 앱에 포함되는 값이므로 Supabase **service_role** 키는 절대 사용하지 마세요. 네이버 Maps에 등록한 Android 패키지 이름과 iOS Bundle ID가 빌드 앱과 일치해야 합니다.
+`compass-ios-sideload-unsigned.ipa`는 arm64 iOS 실기기용 release 바이너리를 `Payload/Runner.app` 형식으로 묶은 것입니다. 서명 없이 직접 설치할 수는 없으며 SideStore 같은 사이드로드 앱에서 **IPA를 선택하고 본인 Apple 계정으로 서명**해야 합니다. 시뮬레이터 ZIP은 실기기에 설치할 수 없습니다. SideStore에서 비ASCII 앱 이름으로 App ID 등록 오류가 발생하지 않도록 사이드로드 IPA의 홈 화면 표시 이름만 `Compass`로 설정했습니다. IPA의 실제 설치·GPS·heading·지도 인증은 실기기에서 확인해야 합니다.
+
+CI 빌드에서 네이버 지도와 친구방을 사용하려면 저장소 **Settings → Secrets and variables → Actions → Variables**에 `NAVER_MAP_CLIENT_ID`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`를 등록하고 빌드를 다시 실행하세요. 값이 없는 빌드도 컴파일되지만 지도와 친구방이 동작하지 않습니다. 앱에 포함되는 값이므로 Supabase **service_role** 키는 절대 사용하지 마세요. 네이버 Maps에 등록한 Android 패키지 이름과 iOS Bundle ID가 실제 설치된 앱과 일치해야 합니다. 사이드로드 도구가 iOS Bundle ID를 다시 쓰면 네이버 인증에 사용할 등록값도 확인해야 합니다.
 
 Room 테스트는 같은 가짜 저장소를 쓰는 두 클라이언트의 생성·참가·위치·Ping·공유 목적지·친구 추적·퇴장 흐름을 검증합니다. 실기기에서는 GPS 권한 거부/재허용, 지도 인증과 핀, 가로 모드, 359°↔0° 회전, 자기장 교란, 고주사율 애니메이션, 서로 다른 기기의 Room 동기화와 재연결을 확인하세요.
