@@ -213,6 +213,8 @@ void main() {
     final navigation = NavigationTargetController(personal, b);
     await a.start(); await b.start();
     await a.setNickname('환희'); await b.setNickname('철수');
+    expect(a.userId, 'a');
+    expect(b.userId, 'b');
     final created = await a.createRoom();
     expect(created.roomId, 'room1');
     await b.joinRoom(a.room!.inviteCode);

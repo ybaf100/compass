@@ -93,6 +93,14 @@ class _RoomSheetState extends State<RoomSheet> {
                   maxLength: 24,
                   decoration: const InputDecoration(labelText: '닉네임',
                     hintText: '친구에게 보일 이름')),
+                Align(alignment: Alignment.centerRight,
+                  child: TextButton(onPressed: () => _run(() async {
+                    await _prepareNickname();
+                    if (mounted) {
+                      ScaffoldMessenger.of(this.context).showSnackBar(
+                        const SnackBar(content: Text('닉네임을 저장했습니다.')));
+                    }
+                  }), child: const Text('닉네임 저장'))),
                 if (room == null) ...[
                   FilledButton(onPressed: !controller.configured || controller.busy
                       ? null : () => _run(() async {

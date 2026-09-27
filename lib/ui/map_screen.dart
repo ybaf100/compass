@@ -115,7 +115,7 @@ class _MapScreenState extends State<MapScreen>
     final currentRoom = state.room;
     final revision = currentRoom?.sharedDestination?.updatedAt;
     if (currentRoom?.id == _lastRoomId && revision != null &&
-        _lastSharedRevision != null && revision != _lastSharedRevision) {
+        revision != _lastSharedRevision) {
       final authorId = currentRoom!.sharedDestination!.updatedBy;
       final author = state.member(authorId)?.nickname ?? '친구';
       WidgetsBinding.instance.addPostFrameCallback((_) {

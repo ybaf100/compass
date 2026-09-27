@@ -115,6 +115,10 @@ class RoomController extends ChangeNotifier {
     await _profileStore.saveNickname(name);
     nickname = name;
     _notify();
+    if (_repository != null) {
+      userId = await _repository.ensureIdentity();
+      _notify();
+    }
     final activeRoom = room;
     if (activeRoom != null) {
       await _repository!.updateNickname(activeRoom.id, name);
