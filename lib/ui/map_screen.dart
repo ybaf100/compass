@@ -97,7 +97,7 @@ class _MapScreenState extends State<MapScreen>
         ? widget.controller.destination : target?.asDestination;
     final point = destination?.point;
     if (point != null && point != _lastDestinationPoint &&
-        target?.mode != NavigationMode.member) {
+        target?.mode != TargetMode.member) {
       _pinReveal.forward(from: 0.15);
     }
     _lastDestinationPoint = point;
@@ -277,10 +277,10 @@ class _MapScreenState extends State<MapScreen>
                         notice: widget.navigationController?.target?.notice,
                         emptyMessage: widget.navigationController?.target?.notice,
                         clearLabel: widget.navigationController == null ||
-                            widget.navigationController!.mode == NavigationMode.personal
+                            widget.navigationController!.mode == TargetMode.personal
                             ? '목적지 해제' : '내 목적지로 전환',
                         onClear: widget.navigationController == null ||
-                            widget.navigationController!.mode == NavigationMode.personal
+                            widget.navigationController!.mode == TargetMode.personal
                             ? widget.controller.clearDestination
                             : widget.navigationController!.selectPersonal,
                       ),
@@ -548,8 +548,10 @@ class _MapScreenState extends State<MapScreen>
       }
       widget.controller.cancelSelection();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(RoomController.readableError(e))));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(RoomController.readableError(e))));
+      }
     }
   }
 

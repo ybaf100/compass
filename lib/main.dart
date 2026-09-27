@@ -29,7 +29,7 @@ Future<void> main() async {
   if (supabaseUrl.isNotEmpty && supabasePublishableKey.isNotEmpty) {
     try {
       await Supabase.initialize(url: supabaseUrl,
-        anonKey: supabasePublishableKey);
+        publishableKey: supabasePublishableKey);
       roomRepository = RealtimeRoomRepository(Supabase.instance.client);
     } catch (_) {
       // A backend initialization error does not block personal navigation.

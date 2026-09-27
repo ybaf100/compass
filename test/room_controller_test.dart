@@ -227,7 +227,7 @@ void main() {
     clock.advance(const Duration(seconds: 1));
     await a.setSharedDestination(const GeoPoint(37.53, 127.03), '서울숲');
     await flush();
-    expect(navigation.mode, NavigationMode.shared);
+    expect(navigation.mode, TargetMode.shared);
     expect(navigation.target?.point, const GeoPoint(37.53, 127.03));
     navigation.followMember('a');
     expect(navigation.target?.point, const GeoPoint(37.51, 127.01));

@@ -6,12 +6,12 @@ import '../destination/destination_controller.dart';
 import '../destination/destination_model.dart';
 import '../room/room_controller.dart';
 
-enum NavigationMode { personal, shared, member }
+enum TargetMode { personal, shared, member }
 
 class NavigationTarget {
   const NavigationTarget({required this.mode, required this.title,
     required this.modeLabel, this.point, this.notice, this.memberId});
-  final NavigationMode mode;
+  final TargetMode mode;
   final GeoPoint? point;
   final String title;
   final String modeLabel;
@@ -32,21 +32,21 @@ class NavigationTargetController extends ChangeNotifier {
 
   final DestinationController _personal;
   final RoomController _room;
-  NavigationMode mode = NavigationMode.personal;
+  TargetMode mode = TargetMode.personal;
   String? targetMemberId;
   String? _lastMemberName;
   String? _roomId;
   DateTime? _sharedRevision;
 
   NavigationTarget? get target {
-    if (mode == NavigationMode.shared && _room.room != null) {
+    if (mode == TargetMode.shared && _room.room != null) {
       final shared = _room.room!.sharedDestination;
       return NavigationTarget(
         mode: mode, title: shared?.title ?? '모두의 목적지가 없습니다',
         modeLabel: '모두의 목적지', point: shared?.point,
       );
     }
-    if (mode == NavigationMode.member && _room.room != null) {
+    if (mode == TargetMode.member && _room.room != null) {
       final member = _room.member(targetMemberId ?? '');
       final name = member?.nickname ?? _lastMemberName ?? '친구';
       final stale = member == null || member.isStale(
@@ -62,7 +62,7 @@ class NavigationTargetController extends ChangeNotifier {
     }
     final personal = _personal.destination;
     if (personal == null) return null;
-    return NavigationTarget(mode: NavigationMode.personal,
+    return NavigationTarget(mode: TargetMode.personal,
       title: personal.title, modeLabel: '내 목적지', point: personal.point);
   }
 
@@ -77,14 +77,14 @@ class NavigationTargetController extends ChangeNotifier {
       : null;
 
   void selectPersonal() {
-    mode = NavigationMode.personal;
+    mode = TargetMode.personal;
     targetMemberId = null;
     notifyListeners();
   }
 
   void selectShared() {
     if (_room.room == null) return;
-    mode = NavigationMode.shared;
+    mode = TargetMode.shared;
     targetMemberId = null;
     notifyListeners();
   }
@@ -92,7 +92,7 @@ class NavigationTargetController extends ChangeNotifier {
   void followMember(String id) {
     final member = _room.member(id);
     if (_room.room == null || member == null || id == _room.userId) return;
-    mode = NavigationMode.member;
+    mode = TargetMode.member;
     targetMemberId = id;
     _lastMemberName = member.nickname;
     notifyListeners();
@@ -104,13 +104,13 @@ class NavigationTargetController extends ChangeNotifier {
       _roomId = current?.id;
       _sharedRevision = current?.sharedDestination?.updatedAt;
       mode = current?.sharedDestination == null
-          ? NavigationMode.personal : NavigationMode.shared;
+          ? TargetMode.personal : TargetMode.shared;
       targetMemberId = null;
     } else {
       final revision = current?.sharedDestination?.updatedAt;
       if (revision != null && revision != _sharedRevision) {
         _sharedRevision = revision;
-        mode = NavigationMode.shared;
+        mode = TargetMode.shared;
         targetMemberId = null;
       }
     }

@@ -110,7 +110,7 @@ class _RoomSheetState extends State<RoomSheet> {
                       ? null : () => _run(() async {
                           await _prepareNickname();
                           final result = await controller.joinRoom(_code.text);
-                          if (result.alreadyJoined && mounted) {
+                          if (result.alreadyJoined && context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text('이미 참가한 방입니다.')));
                           }
@@ -125,8 +125,10 @@ class _RoomSheetState extends State<RoomSheet> {
                     TextButton.icon(
                       onPressed: () => _run(() async {
                         await Clipboard.setData(ClipboardData(text: room.inviteCode));
-                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('초대 코드를 복사했습니다.')));
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('초대 코드를 복사했습니다.')));
+                        }
                       }),
                       icon: const Icon(Icons.copy, size: 18),
                       label: const Text('복사')),
@@ -134,11 +136,11 @@ class _RoomSheetState extends State<RoomSheet> {
                   const Divider(),
                   Wrap(spacing: 8, children: [
                     ChoiceChip(label: const Text('내 목적지'),
-                      selected: widget.navigation.mode == NavigationMode.personal,
+                      selected: widget.navigation.mode == TargetMode.personal,
                       onSelected: (_) => widget.navigation.selectPersonal()),
                     if (room.sharedDestination != null)
                       ChoiceChip(label: const Text('모두의 목적지'),
-                        selected: widget.navigation.mode == NavigationMode.shared,
+                        selected: widget.navigation.mode == TargetMode.shared,
                         onSelected: (_) => widget.navigation.selectShared()),
                   ]),
                   const SizedBox(height: 8),

@@ -26,7 +26,9 @@ class MemberMarkerMotion {
       final old = previous[m.id];
       return old != null && old.point == m.point &&
           old.name == m.name && old.isStale == m.isStale;
-    })) return;
+    })) {
+      return;
+    }
     final current = {for (final m in _rendered) m.id: m};
     final now = DateTime.now().toUtc();
     _from = {for (final member in next)

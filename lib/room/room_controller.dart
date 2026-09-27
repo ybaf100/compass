@@ -241,7 +241,9 @@ class RoomController extends ChangeNotifier {
     if (id == null || fix == null || !foreground || _uploading ||
         _hasNetwork() == false || !fix.point.isValid ||
         fix.accuracyMeters > maximumUploadAccuracyMeters ||
-        fix.accuracyMeters < 0) return;
+        fix.accuracyMeters < 0) {
+      return;
+    }
     final now = currentTime;
     final elapsed = _lastUploadAt == null
         ? null : now.difference(_lastUploadAt!);
