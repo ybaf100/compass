@@ -140,13 +140,15 @@ class CompassPanel extends StatelessWidget {
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            if (modeLabel != null)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 5),
-                                child: Text(modeLabel!, key: const Key('navigation_mode'),
-                                  style: const TextStyle(color: Color(0xFFB4CDD9),
-                                    fontSize: 12, fontWeight: FontWeight.w600)),
-                              ),
+                          ],
+                          if (modeLabel != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 5),
+                              child: Text(modeLabel!, key: const Key('navigation_mode'),
+                                style: const TextStyle(color: Color(0xFFB4CDD9),
+                                  fontSize: 12, fontWeight: FontWeight.w600)),
+                            ),
+                          if (destination != null) ...[
                             if (notice != null)
                               Padding(
                                 padding: const EdgeInsets.only(top: 4),
@@ -174,7 +176,7 @@ class CompassPanel extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (destination != null && expanded > 0.6)
+                if ((destination != null || modeLabel != null) && expanded > 0.6)
                   Opacity(
                     opacity: ((expanded - 0.6) / 0.4).clamp(0.0, 1.0).toDouble(),
                     child: TextButton.icon(
