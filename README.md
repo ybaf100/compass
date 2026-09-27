@@ -4,7 +4,7 @@
 
 ## 실행
 
-Flutter SDK(3.35 이상), Android SDK(35), iOS 개발용 Mac/Xcode 및 CocoaPods(iOS 빌드 시), Python 3가 필요합니다. 이 저장소의 `platform_overrides`는 `flutter create`로 생성된 프로젝트에 적용할 네이티브 센서 코드입니다. **최초 실행과 플랫폼 파일 재생성 시** 아래를 먼저 실행하세요.
+Flutter SDK(3.35 이상), Android SDK(36), iOS 개발용 Mac/Xcode 및 CocoaPods(iOS 빌드 시), Python 3가 필요합니다. 이 저장소의 `platform_overrides`는 `flutter create`로 생성된 프로젝트에 적용할 네이티브 센서 코드입니다. **최초 실행과 플랫폼 파일 재생성 시** 아래를 먼저 실행하세요.
 
 ```bash
 bash tool/bootstrap.sh

@@ -32,8 +32,8 @@ for path in (root / 'android/app/build.gradle.kts',
     gradle = path.read_text()
     gradle = gradle.replace('minSdk = flutter.minSdkVersion', 'minSdk = 23')
     gradle = gradle.replace('minSdkVersion flutter.minSdkVersion', 'minSdkVersion 23')
-    gradle = gradle.replace('compileSdk = flutter.compileSdkVersion', 'compileSdk = 35')
-    gradle = gradle.replace('compileSdkVersion flutter.compileSdkVersion', 'compileSdkVersion 35')
+    gradle = gradle.replace('compileSdk = flutter.compileSdkVersion', 'compileSdk = 36')
+    gradle = gradle.replace('compileSdkVersion flutter.compileSdkVersion', 'compileSdkVersion 36')
     path.write_text(gradle)
 
 info = root / 'ios/Runner/Info.plist'
