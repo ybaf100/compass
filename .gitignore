@@ -1,0 +1,23 @@
+# Flutter generated files and local credentials
+.dart_tool/
+.flutter-plugins-dependencies
+.metadata
+build/
+coverage/
+*.iml
+.idea/
+.vscode/
+android/.gradle/
+android/local.properties
+android/key.properties
+android/app/*.jks
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Runner/GeneratedPluginRegistrant.*
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+.DS_Store
+__pycache__/
+*.pyc
