@@ -34,6 +34,7 @@ class _Backend {
   int leaves = 0;
   int writes = 0;
   bool failLeave = false;
+  bool offline = false;
 
   void publishMembers() => memberEvents.add(members.values.toList());
   void dispose() {
@@ -70,9 +71,11 @@ class _Repository implements RoomRepository {
     return RoomJoinResult('room1', alreadyJoined: already);
   }
   @override
-  Future<RoomSnapshot> loadSnapshot(String roomId) async => RoomSnapshot(
-    room: backend.room!, members: backend.members.values.toList(),
-    pings: backend.pings.toList());
+  Future<RoomSnapshot> loadSnapshot(String roomId) async {
+    if (backend.offline) throw StateError('offline');
+    return RoomSnapshot(room: backend.room!,
+      members: backend.members.values.toList(), pings: backend.pings.toList());
+  }
   @override
   Stream<Room> watchRoom(String roomId) async* {
     yield backend.room!;
@@ -312,6 +315,31 @@ void main() {
     await a.reconnect();
     expect(store.pending, isNull);
     expect(backend.leaves, 1);
+    a.dispose(); signals.dispose(); backend.dispose();
+  });
+
+  test('saved Room reloads when connection returns after startup failure', () async {
+    final clock = _Clock(); final backend = _Backend(clock);
+    backend.room = Room(id: 'room1', inviteCode: 'ABC234', ownerId: 'a',
+      createdAt: clock.now);
+    backend.members['a'] = RoomMember(userId: 'a', nickname: '환희',
+      updatedAt: clock.now);
+    backend.offline = true;
+    final store = _Store()..nickname = '환희'..roomId = 'room1';
+    final signals = _Signals();
+    var connected = false;
+    final a = RoomController(repository: _Repository(backend, 'a'),
+      profileStore: store, locationChanges: signals,
+      currentLocation: () => null, hasNetwork: () => connected,
+      now: () => clock.now);
+    await a.start();
+    expect(a.room, isNull);
+    signals.tick(); // Remember the disconnected state.
+    backend.offline = false;
+    connected = true;
+    signals.tick();
+    await flush();
+    expect(a.room?.id, 'room1');
     a.dispose(); signals.dispose(); backend.dispose();
   });
 }

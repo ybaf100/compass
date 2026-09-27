@@ -232,7 +232,7 @@ class RoomController extends ChangeNotifier {
 
   void _onLocationChanged() {
     final network = _hasNetwork();
-    if (_lastNetwork == false && network == true && room != null) {
+    if (_lastNetwork == false && network == true && _repository != null) {
       unawaited(reconnect());
     }
     _lastNetwork = network;
