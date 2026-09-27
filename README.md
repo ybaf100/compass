@@ -27,7 +27,7 @@ flutter run \
   --dart-define=SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 ```
 
-`SUPABASE_URL` 또는 `SUPABASE_PUBLISHABLE_KEY`가 비어 있으면 친구방 UI에서 설정 안내를 보여주며 개인 목적지는 그대로 작동합니다. 값은 저장소에 커밋하지 않습니다. Supabase 프로젝트 자체와 데이터베이스 마이그레이션은 별도로 준비해야 하며, 클라우드 CI는 실제 프로젝트에 연결하지 않습니다.
+`SUPABASE_URL` 또는 `SUPABASE_PUBLISHABLE_KEY`가 비어 있으면 친구방 UI에서 설정 안내를 보여주며 개인 목적지는 그대로 작동합니다. 값은 저장소에 커밋하지 않습니다. Supabase 프로젝트 자체와 데이터베이스 마이그레이션은 별도로 준비해야 합니다.
 
 첫 친구방 사용 시 닉네임을 입력하면 익명 사용자 ID가 생성됩니다. 닉네임과 참가 중인 Room ID는 기기에 저장되고, 인증 세션은 Supabase SDK가 복원합니다. 방에서 나가면 즉시 로컬 위치 업로드와 구독을 중지합니다. 서버 나가기 요청에 실패하면 다음 연결에서 재시도합니다. 앱이 백그라운드에 있으면 위치를 업로드하지 않습니다. 친구 위치는 35초가 지나면 오래된 정보로 표시합니다.
 
@@ -70,4 +70,8 @@ flutter build ios --simulator --debug --dart-define=NAVER_MAP_CLIENT_ID=발급�
 
 ## 검증
 
-`flutter test`, `flutter analyze`, `flutter build apk --debug`, `flutter build ios --simulator --debug`가 CI에 설정돼 있습니다. Room 테스트는 같은 가짜 저장소를 쓰는 두 클라이언트의 생성·참가·위치·Ping·공유 목적지·친구 추적·퇴장 흐름을 검증합니다. 실기기에서는 GPS 권한 거부/재허용, 지도 인증과 핀, 가로 모드, 359°↔0° 회전, 자기장 교란, 고주사율 애니메이션, 서로 다른 기기의 Room 동기화와 재연결을 확인하세요.
+`flutter test`, `flutter analyze`, `flutter build apk --debug`, `flutter build ios --simulator --debug`가 CI에 설정돼 있습니다. 성공한 GitHub Actions 실행의 **Artifacts**에서 설치 가능한 Android 디버그 APK(`compass-android-debug`)와 iOS 시뮬레이터 앱 ZIP(`compass-ios-simulator`)을 다운로드할 수 있습니다. 시뮬레이터 ZIP 안의 `Runner.app`은 실제 iPhone/iPad에 설치할 수 없습니다. 실기기용 iOS 앱은 Apple 개발 팀의 코드 서명과 provisioning profile이 필요합니다.
+
+CI 빌드에서 네이버 지도와 친구방을 사용하려면 저장소 **Settings → Secrets and variables → Actions → Variables**에 `NAVER_MAP_CLIENT_ID`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`를 등록하고 빌드를 다시 실행하세요. 값이 없는 빌드도 컴파일되지만 지도와 친구방이 동작하지 않습니다. 앱에 포함되는 값이므로 Supabase **service_role** 키는 절대 사용하지 마세요. 네이버 Maps에 등록한 Android 패키지 이름과 iOS Bundle ID가 빌드 앱과 일치해야 합니다.
+
+Room 테스트는 같은 가짜 저장소를 쓰는 두 클라이언트의 생성·참가·위치·Ping·공유 목적지·친구 추적·퇴장 흐름을 검증합니다. 실기기에서는 GPS 권한 거부/재허용, 지도 인증과 핀, 가로 모드, 359°↔0° 회전, 자기장 교란, 고주사율 애니메이션, 서로 다른 기기의 Room 동기화와 재연결을 확인하세요.

@@ -20,7 +20,23 @@ jobs:
       - run: bash tool/bootstrap.sh
       - run: flutter analyze
       - run: flutter test
-      - run: flutter build apk --debug
+      - name: Build Android debug APK
+        env:
+          NAVER_MAP_CLIENT_ID: ${{ vars.NAVER_MAP_CLIENT_ID }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          flutter build apk --debug \
+            --dart-define="NAVER_MAP_CLIENT_ID=${NAVER_MAP_CLIENT_ID}" \
+            --dart-define="SUPABASE_URL=${SUPABASE_URL}" \
+            --dart-define="SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY}"
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: compass-android-debug
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
 
   ios:
     runs-on: macos-latest
@@ -31,4 +47,22 @@ jobs:
           channel: stable
           cache: true
       - run: bash tool/bootstrap.sh
-      - run: flutter build ios --simulator --debug
+      - name: Build iOS simulator app
+        env:
+          NAVER_MAP_CLIENT_ID: ${{ vars.NAVER_MAP_CLIENT_ID }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          flutter build ios --simulator --debug \
+            --dart-define="NAVER_MAP_CLIENT_ID=${NAVER_MAP_CLIENT_ID}" \
+            --dart-define="SUPABASE_URL=${SUPABASE_URL}" \
+            --dart-define="SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY}"
+      - name: Package iOS simulator app
+        run: ditto -c -k --sequesterRsrc --keepParent build/ios/iphonesimulator/Runner.app build/ios/compass-ios-simulator.zip
+      - name: Upload iOS simulator app
+        uses: actions/upload-artifact@v4
+        with:
+          name: compass-ios-simulator
+          path: build/ios/compass-ios-simulator.zip
+          if-no-files-found: error
+          retention-days: 14
