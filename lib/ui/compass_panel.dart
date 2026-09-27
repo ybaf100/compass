@@ -132,7 +132,7 @@ class CompassPanel extends StatelessWidget {
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            if ((heading == null || !heading.isTrueNorth) && !compact)
+                            if ((heading?.isTrueNorth != true) && !compact)
                               Padding(
                                 padding: const EdgeInsets.only(top: 4),
                                 child: Text(

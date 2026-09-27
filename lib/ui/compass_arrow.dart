@@ -79,7 +79,7 @@ class _CompassArrowState extends State<CompassArrow>
         padding: EdgeInsets.all(widget.size * 0.15),
         child: AnimatedBuilder(
           animation: _rotation,
-          builder: (_, __) => Transform.rotate(
+          builder: (_, _) => Transform.rotate(
             angle: _rotation.value * math.pi / 180,
             child: CustomPaint(
               painter: _ArrowPainter(enabled: widget.relativeAngle != null),

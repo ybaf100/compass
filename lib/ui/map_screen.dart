@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../core/geo_point.dart';
@@ -231,13 +232,17 @@ class _MapScreenState extends State<MapScreen>
                 widget.controller.selectPoint(point, name: name),
             onLoaded: () {
               _mapTimeout?.cancel();
-              if (mounted) setState(() {
-                _mapLoaded = true;
-                _mapTimedOut = false;
-              });
+              if (mounted) {
+                setState(() {
+                  _mapLoaded = true;
+                  _mapTimedOut = false;
+                });
+              }
             },
             onGesture: () {
-              if (mounted && _following) setState(() => _following = false);
+              if (mounted && _following) {
+                setState(() => _following = false);
+              }
             },
           ),
         ),
