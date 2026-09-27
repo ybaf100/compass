@@ -9,7 +9,6 @@ import '../destination/bearing_engine.dart';
 import '../map/map_provider.dart';
 import '../map/member_marker_motion.dart';
 import '../navigation/navigation_target.dart';
-import '../room/member_model.dart';
 import '../room/room_controller.dart';
 import 'compass_panel.dart';
 import 'room_sheet.dart';
