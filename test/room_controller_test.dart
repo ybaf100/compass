@@ -33,6 +33,7 @@ class _Backend {
   final pingEvents = StreamController<List<SharedPing>>.broadcast();
   int leaves = 0;
   int writes = 0;
+  bool failLeave = false;
 
   void publishMembers() => memberEvents.add(members.values.toList());
   void dispose() {
@@ -122,6 +123,7 @@ class _Repository implements RoomRepository {
   }
   @override
   Future<void> leaveRoom(String roomId) async {
+    if (backend.failLeave) throw StateError('offline');
     backend.leaves++;
     backend.members.remove(id);
     backend.publishMembers();
@@ -276,6 +278,40 @@ void main() {
     await a.leave();
     final result = await a.joinRoom('ABC234');
     expect(result.alreadyJoined, false);
+    a.dispose(); signals.dispose(); backend.dispose();
+  });
+
+  test('failed leave stops sharing and retries remote cleanup on reconnect', () async {
+    final clock = _Clock(); final backend = _Backend(clock);
+    final signals = _Signals(); final store = _Store();
+    LocationFix? fix = const LocationFix(point: GeoPoint(37, 127),
+      accuracyMeters: 10, altitudeMeters: 0);
+    final a = RoomController(repository: _Repository(backend, 'a'),
+      profileStore: store, locationChanges: signals,
+      currentLocation: () => fix, hasNetwork: () => true, now: () => clock.now);
+    await a.start(); await a.setNickname('환희'); await a.createRoom();
+    await flush();
+    backend.room = Room(id: 'room1', inviteCode: 'ABC234', ownerId: 'a',
+      createdAt: backend.room!.createdAt,
+      sharedDestination: SharedDestination(point: const GeoPoint(37.2, 127.2),
+        updatedBy: 'a', updatedAt: clock.now, name: '새 목적지'));
+    await a.reconnect(); // The changed row was not sent through Realtime.
+    expect(a.room!.sharedDestination!.name, '새 목적지');
+    backend.failLeave = true;
+    await a.leave();
+    expect(a.room, isNull);
+    expect(store.roomId, isNull);
+    expect(store.pending, 'room1');
+    final writes = backend.writes;
+    clock.advance(const Duration(seconds: 10));
+    fix = const LocationFix(point: GeoPoint(37.01, 127),
+      accuracyMeters: 10, altitudeMeters: 0);
+    signals.tick(); await flush();
+    expect(backend.writes, writes);
+    backend.failLeave = false;
+    await a.reconnect();
+    expect(store.pending, isNull);
+    expect(backend.leaves, 1);
     a.dispose(); signals.dispose(); backend.dispose();
   });
 }
