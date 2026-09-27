@@ -53,6 +53,7 @@ class RoomController extends ChangeNotifier {
   bool? _lastNetwork;
   int _generation = 0;
   DateTime? _lastUploadAt;
+  DateTime? _lastSuccessfulUploadAt;
   GeoPoint? _lastUploadPoint;
   bool _uploading = false;
   Timer? _ticker;
@@ -62,7 +63,9 @@ class RoomController extends ChangeNotifier {
   String? _pendingLeave;
 
   bool get configured => _repository != null;
-  bool get sharingLocation => room != null && foreground;
+  bool get sharingLocation => room != null && foreground &&
+      _lastSuccessfulUploadAt != null &&
+      currentTime.difference(_lastSuccessfulUploadAt!) < staleAfter;
   DateTime get currentTime => _now().toUtc();
   List<SharedPing> get activePings => pings
       .where((ping) => currentTime.difference(ping.createdAt) < pingLifetime)
@@ -166,6 +169,7 @@ class RoomController extends ChangeNotifier {
     pings = snapshot.pings;
     userId = _repository.userId;
     _lastUploadAt = null;
+    _lastSuccessfulUploadAt = null;
     _lastUploadPoint = null;
     error = null;
     await _profileStore.saveRoomId(id);
@@ -256,7 +260,12 @@ class RoomController extends ChangeNotifier {
     _lastUploadAt = now;
     _lastUploadPoint = fix.point;
     unawaited(_repository!.updateLocation(id, fix.point,
-        fix.accuracyMeters).catchError((Object _) {
+        fix.accuracyMeters).then((_) {
+      if (room?.id == id && !_disposed) {
+        _lastSuccessfulUploadAt = currentTime;
+        _notify();
+      }
+    }).catchError((Object _) {
       if (room?.id == id && !_disposed) {
         _lastUploadAt = null;
         error = '위치 공유에 실패했습니다. 연결을 확인하세요.';
@@ -287,6 +296,7 @@ class RoomController extends ChangeNotifier {
     members = const [];
     pings = const [];
     _lastUploadAt = null;
+    _lastSuccessfulUploadAt = null;
     _lastUploadPoint = null;
     _notify();
     await _cancelSubscriptions();

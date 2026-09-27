@@ -421,7 +421,7 @@ class _MapScreenState extends State<MapScreen>
                 child: Chip(
                   visualDensity: VisualDensity.compact,
                   label: Text('친구방 · ${widget.roomController!.members.length}명 · '
-                    '${widget.roomController!.sharingLocation ? '위치 공유 중' : '공유 일시 중지'}'),
+                    '${widget.roomController!.sharingLocation ? '위치 공유 중' : '위치 공유 대기'}'),
                 )),
             ),
           if (widget.roomController?.error != null)

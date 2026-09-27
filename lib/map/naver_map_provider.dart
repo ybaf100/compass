@@ -249,7 +249,11 @@ class NaverMapProvider implements MapProvider {
         members.every((member) => _memberMarkers.containsKey(member.id)) &&
         _memberMarkers.length == members.length) {
       for (final member in members) {
-        _memberMarkers[member.id]!.setPosition(_latLng(member.point));
+        final marker = _memberMarkers[member.id]!;
+        marker.setPosition(_latLng(member.point));
+        marker.setCaption(NOverlayCaption(text: member.name));
+        marker.setIconTintColor(member.isStale
+            ? const Color(0xFF8796A0) : const Color(0xFF39C2A4));
       }
       return Future<void>.value();
     }
