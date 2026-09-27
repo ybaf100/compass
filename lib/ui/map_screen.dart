@@ -5,8 +5,13 @@ import 'package:flutter/material.dart';
 
 import '../core/geo_point.dart';
 import '../destination/destination_controller.dart';
+import '../destination/bearing_engine.dart';
 import '../map/map_provider.dart';
+import '../map/member_marker_motion.dart';
+import '../navigation/navigation_target.dart';
+import '../room/room_controller.dart';
 import 'compass_panel.dart';
+import 'room_sheet.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({
@@ -15,12 +20,16 @@ class MapScreen extends StatefulWidget {
     required this.mapProvider,
     required this.mapConfigured,
     required this.mapError,
+    this.roomController,
+    this.navigationController,
   });
 
   final DestinationController controller;
   final MapProvider mapProvider;
   final bool mapConfigured;
   final ValueListenable<String?> mapError;
+  final RoomController? roomController;
+  final NavigationTargetController? navigationController;
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -41,6 +50,10 @@ class _MapScreenState extends State<MapScreen>
     widget.controller.heading,
     widget.controller.filteredHeading,
   ]);
+  late final MemberMarkerMotion _memberMotion = MemberMarkerMotion(
+    vsync: this,
+    onFrame: (members) => _runMap(widget.mapProvider.setMembers(members)),
+  );
 
   Timer? _mapTimeout;
   int _mapGeneration = 0;
@@ -49,35 +62,85 @@ class _MapScreenState extends State<MapScreen>
   bool _following = true;
   GeoPoint? _lastDestinationPoint;
   String? _mapOperationError;
+  String? _lastRoomId;
+  DateTime? _lastSharedRevision;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     widget.controller.addListener(_onControllerChanged);
+    widget.roomController?.addListener(_onRoomChanged);
+    widget.navigationController?.addListener(_onControllerChanged);
     if (widget.mapConfigured) _armMapTimeout();
     unawaited(widget.controller.start());
+    if (widget.roomController != null) {
+      unawaited(widget.roomController!.start());
+    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(widget.controller.onAppResume());
+      widget.roomController?.setForeground(true);
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      widget.roomController?.setForeground(false);
     }
   }
 
   void _onControllerChanged() {
-    final point = widget.controller.destination?.point;
-    if (point != null && point != _lastDestinationPoint) {
+    final target = widget.navigationController?.target;
+    final destination = widget.navigationController == null
+        ? widget.controller.destination : target?.asDestination;
+    final point = destination?.point;
+    if (point != null && point != _lastDestinationPoint &&
+        target?.mode != TargetMode.member) {
       _pinReveal.forward(from: 0.15);
     }
     _lastDestinationPoint = point;
-    _runMap(widget.mapProvider.setDestination(widget.controller.destination));
+    _runMap(widget.mapProvider.setDestination(destination));
     _runMap(widget.mapProvider.setCandidate(widget.controller.selectedPoint));
     _runMap(widget.mapProvider.setUserLocation(
       widget.controller.location,
       follow: _following,
     ));
+    if (mounted) setState(() {});
+  }
+
+  void _onRoomChanged() {
+    final state = widget.roomController;
+    if (state == null) return;
+    final currentRoom = state.room;
+    final revision = currentRoom?.sharedDestination?.updatedAt;
+    if (currentRoom?.id == _lastRoomId && revision != null &&
+        revision != _lastSharedRevision) {
+      final authorId = currentRoom!.sharedDestination!.updatedBy;
+      final author = state.member(authorId)?.nickname ?? '친구';
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('$author님이 ${currentRoom.sharedDestination!.title}을(를) '
+            '모두의 목적지로 지정했습니다.'),
+          duration: const Duration(seconds: 3),
+        ));
+      });
+    }
+    _lastRoomId = currentRoom?.id;
+    _lastSharedRevision = revision;
+    _memberMotion.update([
+      for (final member in state.members)
+        if (member.userId != state.userId && member.point != null)
+          MapMemberOverlay(id: member.userId, name: member.nickname,
+            point: member.point!, updatedAt: member.updatedAt,
+            isStale: member.isStale(state.currentTime, RoomController.staleAfter)),
+    ]);
+    _runMap(widget.mapProvider.setSharedPings([
+      for (final ping in state.activePings)
+        MapPingOverlay(id: ping.id, point: ping.point,
+          label: '${ping.createdByNickname} · Ping'),
+    ]));
     if (mounted) setState(() {});
   }
 
@@ -120,6 +183,9 @@ class _MapScreenState extends State<MapScreen>
     _mapTimeout?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_onControllerChanged);
+    widget.roomController?.removeListener(_onRoomChanged);
+    widget.navigationController?.removeListener(_onControllerChanged);
+    _memberMotion.dispose();
     _expansion.dispose();
     _pinReveal.dispose();
     super.dispose();
@@ -194,14 +260,28 @@ class _MapScreenState extends State<MapScreen>
                       animation: _headingChanges,
                       builder: (context, _) => CompassPanel(
                         progress: progress,
-                        destination: widget.controller.destination,
-                        distanceMeters: widget.controller.distanceMeters,
-                        destinationBearing:
-                            widget.controller.destinationBearing,
+                        destination: widget.navigationController == null
+                            ? widget.controller.destination
+                            : widget.navigationController!.target?.asDestination,
+                        distanceMeters: widget.navigationController == null
+                            ? widget.controller.distanceMeters
+                            : widget.navigationController!.distanceMeters,
+                        destinationBearing: widget.navigationController == null
+                            ? widget.controller.destinationBearing
+                            : widget.navigationController!.bearing,
                         heading: widget.controller.heading.value,
                         filteredHeading:
                             widget.controller.filteredHeading.value,
-                        onClear: widget.controller.clearDestination,
+                        modeLabel: widget.navigationController?.target?.modeLabel,
+                        notice: widget.navigationController?.target?.notice,
+                        emptyMessage: widget.navigationController?.target?.notice,
+                        clearLabel: widget.navigationController == null ||
+                            widget.navigationController!.mode == TargetMode.personal
+                            ? '목적지 해제' : '내 목적지로 전환',
+                        onClear: widget.navigationController == null ||
+                            widget.navigationController!.mode == TargetMode.personal
+                            ? widget.controller.clearDestination
+                            : widget.navigationController!.selectPersonal,
                       ),
                     ),
                   ),
@@ -244,6 +324,7 @@ class _MapScreenState extends State<MapScreen>
                 setState(() => _following = false);
               }
             },
+            onMemberTapped: _showMember,
           ),
         ),
       ),
@@ -316,6 +397,13 @@ class _MapScreenState extends State<MapScreen>
                     icon: const Icon(Icons.delete_outline, color: Colors.white),
                   ),
                 IconButton(
+                  tooltip: '친구방',
+                  onPressed: _showRoomSheet,
+                  icon: Icon(Icons.people_alt_outlined,
+                    color: widget.roomController?.room == null
+                        ? Colors.white : const Color(0xFF69E1F5)),
+                ),
+                IconButton(
                   tooltip: '내 위치로 이동',
                   onPressed: _recenter,
                   icon: Icon(
@@ -326,6 +414,20 @@ class _MapScreenState extends State<MapScreen>
               ]),
             ),
           ),
+          if (widget.roomController?.room != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Align(alignment: Alignment.centerLeft,
+                child: Chip(
+                  visualDensity: VisualDensity.compact,
+                  label: Text('친구방 · ${widget.roomController!.members.length}명 · '
+                    '${widget.roomController!.sharingLocation ? '위치 공유 중' : '위치 공유 대기'}'),
+                )),
+            ),
+          if (widget.roomController?.error != null)
+            Padding(padding: const EdgeInsets.only(top: 4),
+              child: Text(widget.roomController!.error!,
+                style: const TextStyle(color: Color(0xFFFFD099), fontSize: 12))),
           if (controller.locationState != LocationState.ready ||
               controller.persistenceFailed)
             _buildLocationBanner(),
@@ -406,14 +508,89 @@ class _MapScreenState extends State<MapScreen>
                 const SizedBox(width: 8),
                 Expanded(child: FilledButton(
                   key: const Key('confirm_destination'),
-                  onPressed: controller.confirmSelection,
-                  child: const Text('목적지로 설정'),
+                  onPressed: () {
+                    controller.confirmSelection();
+                    widget.navigationController?.selectPersonal();
+                  },
+                  child: Text(widget.roomController?.room == null
+                      ? '목적지로 설정' : '내 목적지'),
                 )),
               ]),
+              if (widget.roomController?.room != null) ...[
+                const SizedBox(height: 6),
+                Row(children: [
+                  Expanded(child: OutlinedButton(
+                    onPressed: () => _shareSelection(ping: true),
+                    child: const Text('친구들에게 Ping'))),
+                  const SizedBox(width: 8),
+                  Expanded(child: FilledButton.tonal(
+                    onPressed: () => _shareSelection(ping: false),
+                    child: const Text('모두의 목적지'))),
+                ]),
+              ],
             ]),
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _shareSelection({required bool ping}) async {
+    final point = widget.controller.selectedPoint;
+    final room = widget.roomController;
+    if (point == null || room?.room == null) return;
+    try {
+      if (ping) {
+        await room!.sendPing(point);
+      } else {
+        await room!.setSharedDestination(point, widget.controller.selectedName);
+      }
+      widget.controller.cancelSelection();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(RoomController.readableError(e))));
+      }
+    }
+  }
+
+  void _showRoomSheet() {
+    final room = widget.roomController;
+    final navigation = widget.navigationController;
+    if (room == null || navigation == null) return;
+    showModalBottomSheet<void>(context: context, isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => RoomSheet(roomController: room,
+        navigation: navigation, myPoint: widget.controller.location?.point,
+        onFocusMember: (member) => _showMember(member.userId)));
+  }
+
+  void _showMember(String id) {
+    final room = widget.roomController;
+    final member = room?.member(id);
+    if (room == null || member == null) return;
+    final own = widget.controller.location?.point;
+    final meters = own != null && member.point != null
+        ? BearingEngine.distanceMeters(own, member.point!) : null;
+    showModalBottomSheet<void>(context: context, showDragHandle: true,
+      builder: (context) => SafeArea(child: Center(child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 500),
+        child: Padding(padding: const EdgeInsets.all(20),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(member.nickname, style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            Text(member.point == null ? '위치 정보 없음'
+                : '${CompassPanel.formatDistance(meters)} · '
+                  '마지막 업데이트 ${room.currentTime.difference(member.updatedAt).inSeconds}초 전'),
+            if (member.isStale(room.currentTime, RoomController.staleAfter))
+              const Text('위치가 오래되었습니다.',
+                style: TextStyle(color: Colors.orange)),
+            const SizedBox(height: 14),
+            FilledButton(onPressed: member.point == null ? null : () {
+              widget.navigationController?.followMember(id);
+              Navigator.pop(context);
+            }, child: const Text('친구 따라가기')),
+          ])),
+      ))));
   }
 }

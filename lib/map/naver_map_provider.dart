@@ -11,6 +11,11 @@ class NaverMapProvider implements MapProvider {
   NaverMapController? _controller;
   NMarker? _destinationMarker;
   NMarker? _candidateMarker;
+  final Map<String, NMarker> _memberMarkers = {};
+  final Map<String, NMarker> _pingMarkers = {};
+  List<MapMemberOverlay> _members = const [];
+  List<MapPingOverlay> _pings = const [];
+  void Function(String)? _onMemberTapped;
   Destination? _destination;
   GeoPoint? _candidate;
   LocationFix? _location;
@@ -28,6 +33,7 @@ class NaverMapProvider implements MapProvider {
     required void Function(GeoPoint, String) onNamedPlacePicked,
     required VoidCallback onLoaded,
     required VoidCallback onGesture,
+    void Function(String memberId)? onMemberTapped,
   }) => NaverMap(
     options: NaverMapViewOptions(
       initialCameraPosition: const NCameraPosition(
@@ -42,6 +48,9 @@ class NaverMapProvider implements MapProvider {
       _controller = controller;
       _destinationMarker = null;
       _candidateMarker = null;
+      _memberMarkers.clear();
+      _pingMarkers.clear();
+      _onMemberTapped = onMemberTapped;
       _lastCameraPoint = null;
       _queue(_reconcile).catchError((Object _) {});
       if (_location != null) {
@@ -136,6 +145,48 @@ class NaverMapProvider implements MapProvider {
         _candidateMarker!.setPosition(_latLng(candidate));
       }
     }
+
+    final memberIds = _members.map((m) => m.id).toSet();
+    for (final id in _memberMarkers.keys.toList()) {
+      if (!memberIds.contains(id)) {
+        await controller.deleteOverlay(_memberMarkers.remove(id)!.info);
+      }
+    }
+    for (final member in _members) {
+      final marker = _memberMarkers[member.id];
+      if (marker == null) {
+        final newMarker = NMarker(
+          id: 'member_${member.id}', position: _latLng(member.point),
+          caption: NOverlayCaption(text: member.name),
+          iconTintColor: member.isStale
+              ? const Color(0xFF8796A0) : const Color(0xFF39C2A4),
+        );
+        newMarker.setOnTapListener((_) => _onMemberTapped?.call(member.id));
+        await controller.addOverlay(newMarker);
+        _memberMarkers[member.id] = newMarker;
+      } else {
+        marker.setPosition(_latLng(member.point));
+        marker.setCaption(NOverlayCaption(text: member.name));
+        marker.setIconTintColor(member.isStale
+            ? const Color(0xFF8796A0) : const Color(0xFF39C2A4));
+      }
+    }
+    final pingIds = _pings.map((p) => p.id).toSet();
+    for (final id in _pingMarkers.keys.toList()) {
+      if (!pingIds.contains(id)) {
+        await controller.deleteOverlay(_pingMarkers.remove(id)!.info);
+      }
+    }
+    for (final ping in _pings) {
+      if (_pingMarkers.containsKey(ping.id)) continue;
+      final marker = NMarker(
+        id: 'ping_${ping.id}', position: _latLng(ping.point),
+        caption: NOverlayCaption(text: ping.label),
+        iconTintColor: const Color(0xFFF2B458),
+      );
+      await controller.addOverlay(marker);
+      _pingMarkers[ping.id] = marker;
+    }
   }
 
   @override
@@ -190,6 +241,31 @@ class NaverMapProvider implements MapProvider {
     });
   }
 
+  @override
+  Future<void> setMembers(List<MapMemberOverlay> members) {
+    _members = members;
+    final controller = _controller;
+    if (controller != null &&
+        members.every((member) => _memberMarkers.containsKey(member.id)) &&
+        _memberMarkers.length == members.length) {
+      for (final member in members) {
+        final marker = _memberMarkers[member.id]!;
+        marker.setPosition(_latLng(member.point));
+        marker.setCaption(NOverlayCaption(text: member.name));
+        marker.setIconTintColor(member.isStale
+            ? const Color(0xFF8796A0) : const Color(0xFF39C2A4));
+      }
+      return Future<void>.value();
+    }
+    return _queue(_reconcile);
+  }
+
+  @override
+  Future<void> setSharedPings(List<MapPingOverlay> pings) {
+    _pings = pings;
+    return _queue(_reconcile);
+  }
+
   static NLatLng _latLng(GeoPoint point) =>
       NLatLng(point.latitude, point.longitude);
 
@@ -198,6 +274,9 @@ class NaverMapProvider implements MapProvider {
     _controller = null;
     _destinationMarker = null;
     _candidateMarker = null;
+    _memberMarkers.clear();
+    _pingMarkers.clear();
+    _onMemberTapped = null;
     _lastCameraPoint = null;
   }
 
