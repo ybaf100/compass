@@ -33,7 +33,7 @@ class MapScreen extends StatefulWidget {
   final DestinationController controller;
   final MapProvider mapProvider;
   final bool mapConfigured;
-  final ValueListenable<String?> mapError;
+  final ValueNotifier<String?> mapError;
   final RoomController? roomController;
   final NavigationTargetController? navigationController;
   final MapProvider? offlineMapProvider;
