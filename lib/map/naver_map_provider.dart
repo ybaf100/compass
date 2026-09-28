@@ -7,7 +7,7 @@ import '../destination/destination_model.dart';
 import 'map_provider.dart';
 
 /// The only app module aware of flutter_naver_map native overlay APIs.
-class NaverMapProvider implements MapProvider {
+class NaverMapProvider implements MapProvider, CameraAwareMapProvider {
   NaverMapController? _controller;
   NMarker? _destinationMarker;
   NMarker? _candidateMarker;
@@ -20,6 +20,9 @@ class NaverMapProvider implements MapProvider {
   GeoPoint? _candidate;
   LocationFix? _location;
   GeoPoint? _lastCameraPoint;
+  MapCameraState? _savedCamera;
+  @override
+  MapCameraState? get cameraState => _savedCamera;
   double _pinReveal = 1.0;
   bool _disposed = false;
   Future<void> _operations = Future<void>.value();
@@ -36,10 +39,11 @@ class NaverMapProvider implements MapProvider {
     void Function(String memberId)? onMemberTapped,
   }) => NaverMap(
     options: NaverMapViewOptions(
-      initialCameraPosition: const NCameraPosition(
-        target: _defaultCenter,
-        zoom: 14,
-      ),
+      initialCameraPosition: _savedCamera == null ? const NCameraPosition(
+        target: _defaultCenter, zoom: 14,
+      ) : NCameraPosition(target: _latLng(_savedCamera!.center),
+        zoom: _savedCamera!.zoom, bearing: _savedCamera!.bearing,
+        tilt: _savedCamera!.pitch),
       contentPadding: EdgeInsets.only(bottom: bottomPadding),
       scaleBarEnable: true,
       locationButtonEnable: false,
@@ -51,9 +55,11 @@ class NaverMapProvider implements MapProvider {
       _memberMarkers.clear();
       _pingMarkers.clear();
       _onMemberTapped = onMemberTapped;
-      _lastCameraPoint = null;
+      _lastCameraPoint = _savedCamera?.center;
       _queue(_reconcile).catchError((Object _) {});
-      if (_location != null) {
+      if (_savedCamera != null) {
+        _queue(() => restoreCamera(_savedCamera!)).catchError((Object _) {});
+      } else if (_location != null) {
         _queue(() => moveCamera(_location!.point, zoom: 16))
             .catchError((Object _) {});
       } else if (_destination != null) {
@@ -73,6 +79,12 @@ class NaverMapProvider implements MapProvider {
       symbol.caption,
     ),
     onCameraChange: (reason, _) {
+      final position = _controller?.nowCameraPosition;
+      if (position != null) {
+        _savedCamera = MapCameraState(GeoPoint(position.target.latitude,
+            position.target.longitude), zoom: position.zoom,
+            bearing: position.bearing, pitch: position.tilt);
+      }
       if (reason == NCameraUpdateReason.gesture ||
           reason == NCameraUpdateReason.control) {
         onGesture();
@@ -200,6 +212,20 @@ class NaverMapProvider implements MapProvider {
     update.setAnimation(duration: const Duration(milliseconds: 420));
     await controller.updateCamera(update);
     _lastCameraPoint = point;
+    final current = _savedCamera;
+    _savedCamera = MapCameraState(point, zoom: zoom ?? current?.zoom ?? 14,
+      bearing: current?.bearing ?? 0, pitch: current?.pitch ?? 0);
+  }
+
+  @override
+  Future<void> restoreCamera(MapCameraState state) async {
+    _savedCamera = state;
+    _lastCameraPoint = state.center;
+    final controller = _controller;
+    if (controller == null || _disposed) return;
+    await controller.updateCamera(NCameraUpdate.fromCameraPosition(
+      NCameraPosition(target: _latLng(state.center), zoom: state.zoom,
+        bearing: state.bearing, tilt: state.pitch)));
   }
 
   @override
@@ -277,7 +303,7 @@ class NaverMapProvider implements MapProvider {
     _memberMarkers.clear();
     _pingMarkers.clear();
     _onMemberTapped = null;
-    _lastCameraPoint = null;
+    _lastCameraPoint = _savedCamera?.center;
   }
 
   @override

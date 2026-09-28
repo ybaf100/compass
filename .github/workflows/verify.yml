@@ -25,11 +25,13 @@ jobs:
           NAVER_MAP_CLIENT_ID: ${{ vars.NAVER_MAP_CLIENT_ID }}
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          MAPBOX_ACCESS_TOKEN: ${{ vars.MAPBOX_ACCESS_TOKEN }}
         run: |
           flutter build apk --debug \
             --dart-define="NAVER_MAP_CLIENT_ID=${NAVER_MAP_CLIENT_ID}" \
             --dart-define="SUPABASE_URL=${SUPABASE_URL}" \
-            --dart-define="SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY}"
+            --dart-define="SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY}" \
+            --dart-define="MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN}"
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
@@ -52,11 +54,13 @@ jobs:
           NAVER_MAP_CLIENT_ID: ${{ vars.NAVER_MAP_CLIENT_ID }}
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          MAPBOX_ACCESS_TOKEN: ${{ vars.MAPBOX_ACCESS_TOKEN }}
         run: |
           flutter build ios --simulator --debug \
             --dart-define="NAVER_MAP_CLIENT_ID=${NAVER_MAP_CLIENT_ID}" \
             --dart-define="SUPABASE_URL=${SUPABASE_URL}" \
-            --dart-define="SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY}"
+            --dart-define="SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY}" \
+            --dart-define="MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN}"
       - name: Package iOS simulator app
         run: ditto -c -k --sequesterRsrc --keepParent build/ios/iphonesimulator/Runner.app build/ios/compass-ios-simulator.zip
       - name: Upload iOS simulator app
@@ -81,11 +85,13 @@ jobs:
           NAVER_MAP_CLIENT_ID: ${{ vars.NAVER_MAP_CLIENT_ID }}
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          MAPBOX_ACCESS_TOKEN: ${{ vars.MAPBOX_ACCESS_TOKEN }}
         run: |
           flutter build ios --release --no-codesign \
             --dart-define="NAVER_MAP_CLIENT_ID=${NAVER_MAP_CLIENT_ID}" \
             --dart-define="SUPABASE_URL=${SUPABASE_URL}" \
-            --dart-define="SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY}"
+            --dart-define="SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY}" \
+            --dart-define="MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN}"
       - name: Package and verify sideload IPA
         run: |
           mkdir -p build/ios/ipa/Payload

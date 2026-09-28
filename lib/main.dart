@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
@@ -9,9 +10,13 @@ import 'room/room_repository.dart';
 const naverClientId = String.fromEnvironment('NAVER_MAP_CLIENT_ID');
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const supabasePublishableKey = String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
+const mapboxAccessToken = String.fromEnvironment('MAPBOX_ACCESS_TOKEN');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (mapboxAccessToken.isNotEmpty) {
+    MapboxOptions.setAccessToken(mapboxAccessToken);
+  }
   final mapError = ValueNotifier<String?>(null);
   if (naverClientId.isNotEmpty) {
     try {
@@ -39,5 +44,6 @@ Future<void> main() async {
     mapConfigured: naverClientId.isNotEmpty,
     mapError: mapError,
     roomRepository: roomRepository,
+    mapboxConfigured: mapboxAccessToken.isNotEmpty,
   ));
 }

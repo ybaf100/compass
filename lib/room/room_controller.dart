@@ -10,6 +10,7 @@ import 'profile_store.dart';
 import 'room_model.dart';
 import 'room_repository.dart';
 import 'shared_ping.dart';
+import 'room_snapshot_store.dart';
 
 class RoomController extends ChangeNotifier {
   RoomController({
@@ -18,12 +19,14 @@ class RoomController extends ChangeNotifier {
     required Listenable locationChanges,
     required LocationFix? Function() currentLocation,
     required bool? Function() hasNetwork,
+    RoomSnapshotStore? snapshotStore,
     DateTime Function()? now,
   }) : _repository = repository,
        _profileStore = profileStore,
        _locationChanges = locationChanges,
        _currentLocation = currentLocation,
        _hasNetwork = hasNetwork,
+       _snapshotStore = snapshotStore,
        _now = now ?? DateTime.now;
 
   static const uploadInterval = Duration(seconds: 8);
@@ -38,6 +41,8 @@ class RoomController extends ChangeNotifier {
   final Listenable _locationChanges;
   final LocationFix? Function() _currentLocation;
   final bool? Function() _hasNetwork;
+  final RoomSnapshotStore? _snapshotStore;
+  Future<void> _cacheWrites = Future<void>.value();
   final DateTime Function() _now;
 
   String? nickname;
@@ -63,7 +68,9 @@ class RoomController extends ChangeNotifier {
   String? _pendingLeave;
 
   bool get configured => _repository != null;
+  bool? get hasNetwork => _hasNetwork();
   bool get sharingLocation => room != null && foreground &&
+      _hasNetwork() != false &&
       _lastSuccessfulUploadAt != null &&
       currentTime.difference(_lastSuccessfulUploadAt!) < staleAfter;
   DateTime get currentTime => _now().toUtc();
@@ -91,8 +98,19 @@ class RoomController extends ChangeNotifier {
     _pendingLeave = await _profileStore.loadPendingLeave();
     final savedRoom = await _profileStore.loadRoomId();
     if (_disposed) return;
+    _lastNetwork = _hasNetwork();
+    userId = _repository?.userId;
+    if (savedRoom != null && _pendingLeave == null && _snapshotStore != null) {
+      final cached = await _snapshotStore.load();
+      if (_disposed) return;
+      if (cached?.room.id == savedRoom) {
+        room = cached!.room;
+        members = cached.members;
+        pings = cached.pings;
+      }
+    }
     _notify();
-    if (_repository == null) return;
+    if (_repository == null || _hasNetwork() == false) return;
     try {
       if (savedRoom != null || _pendingLeave != null) {
         userId = await _repository.ensureIdentity();
@@ -179,6 +197,7 @@ class RoomController extends ChangeNotifier {
     await _profileStore.saveRoomId(id);
     if (_disposed || generation != _generation) return;
     _subscribe(id, generation);
+    _persistSnapshot();
     _notify();
     _maybeUpload();
   }
@@ -193,18 +212,21 @@ class RoomController extends ChangeNotifier {
     _roomSubscription = repo.watchRoom(id).listen((value) {
       if (_disposed || generation != _generation) return;
       room = value;
+      _persistSnapshot();
       error = null;
       _notify();
     }, onError: onError);
     _membersSubscription = repo.watchMembers(id).listen((value) {
       if (_disposed || generation != _generation) return;
       members = value;
+      _persistSnapshot();
       error = null;
       _notify();
     }, onError: onError);
     _pingsSubscription = repo.watchPings(id).listen((value) {
       if (_disposed || generation != _generation) return;
       pings = value;
+      _persistSnapshot();
       error = null;
       _notify();
     }, onError: onError);
@@ -283,12 +305,14 @@ class RoomController extends ChangeNotifier {
   Future<void> sendPing(GeoPoint point) async {
     final id = room?.id;
     if (id == null) throw StateError('방에 참가한 후 Ping을 보낼 수 있습니다.');
+    if (_hasNetwork() == false) throw StateError('오프라인에서는 Ping을 보낼 수 없습니다.');
     await _repository!.sendPing(id, point);
   }
 
   Future<void> setSharedDestination(GeoPoint point, String? name) async {
     final id = room?.id;
     if (id == null) throw StateError('방에 참가한 후 공유할 수 있습니다.');
+    if (_hasNetwork() == false) throw StateError('오프라인에서는 모두의 목적지를 변경할 수 없습니다.');
     await _repository!.setSharedDestination(id, point, name);
   }
 
@@ -304,6 +328,7 @@ class RoomController extends ChangeNotifier {
     _lastUploadPoint = null;
     _notify();
     await _cancelSubscriptions();
+    await _queueSnapshot(null);
     _pendingLeave = id;
     await _profileStore.savePendingLeave(id);
     await _profileStore.saveRoomId(null);
@@ -332,6 +357,22 @@ class RoomController extends ChangeNotifier {
     _roomSubscription = null;
     _membersSubscription = null;
     _pingsSubscription = null;
+  }
+
+  void _persistSnapshot() {
+    final current = room;
+    if (_snapshotStore == null || current == null) return;
+    final snapshot = RoomSnapshot(room: current, members: members,
+      pings: activePings);
+    unawaited(_queueSnapshot(snapshot).catchError((Object _) {}));
+  }
+
+  Future<void> _queueSnapshot(RoomSnapshot? snapshot) {
+    final store = _snapshotStore;
+    if (store == null) return Future<void>.value();
+    final write = _cacheWrites.then((_) => store.save(snapshot));
+    _cacheWrites = write.catchError((Object _) {});
+    return write;
   }
 
   static String readableError(Object exception) {
