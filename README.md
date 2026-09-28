@@ -4,7 +4,7 @@
 
 ## 실행
 
-Flutter SDK(3.35 이상), Android SDK(36), iOS 개발용 Mac/Xcode 및 CocoaPods(iOS 빌드 시), Python 3가 필요합니다. 이 저장소의 `platform_overrides`는 `flutter create`로 생성된 프로젝트에 적용할 네이티브 센서 코드입니다. **최초 실행과 플랫폼 파일 재생성 시** 아래를 먼저 실행하세요.
+Flutter SDK(3.47 이상), Android SDK(36), iOS 개발용 Mac/Xcode 및 CocoaPods(iOS 빌드 시), Python 3가 필요합니다. 이 저장소의 `platform_overrides`는 `flutter create`로 생성된 프로젝트에 적용할 네이티브 센서 코드입니다. **최초 실행과 플랫폼 파일 재생성 시** 아래를 먼저 실행하세요.
 
 ```bash
 bash tool/bootstrap.sh
@@ -33,6 +33,8 @@ flutter run \
 ## 오프라인 지도
 
 Mapbox의 **public** access token (`pk.`)을 `MAPBOX_ACCESS_TOKEN` dart-define으로 주입합니다. secret token은 모바일 앱에 넣지 마세요. 토큰이 없으면 오프라인 지도만 비활성화되고 네이버 지도·나침반·친구방은 계속 사용할 수 있습니다. iOS 14 이상과 Android 23 이상이 필요합니다.
+
+Android 부트스트랩은 네이버 지도 플러그인의 Kotlin Gradle Plugin과 Mapbox SDK의 AGP 9 조건부 설정이 함께 동작하도록 AGP 8.10.1, Gradle 8.14, Kotlin 2.2.20을 생성된 프로젝트에 지정합니다. 두 플러그인이 AGP 9 built-in Kotlin을 함께 지원하게 되면 이 호환성 고정을 해제할 수 있습니다.
 
 온라인일 때 상단 **오프라인 지도**에서 GPS 현재 위치 주변 5/20/50 km를 선택하고 용량을 추정한 뒤 내려받습니다. 실제 용량은 지역·줌·Mapbox 리소스에 따라 다릅니다. Mapbox 공식 Style Pack(`MAPBOX_STREETS`)과 Tile Region API를 사용하며 줌 0–15의 64각형 원형 영역을 저장합니다. 다운로드 중 진행률과 실패/재시도, 지역별 삭제 및 다운로드 용량 합계를 표시합니다. 겹친 타일과 공유 Style Pack 때문에 합계는 실제 앱의 물리적 저장 공간과 다를 수 있습니다. 타일 지역을 지워도 공유 Style Pack이나 다른 지역의 타일은 제거하지 않습니다.
 

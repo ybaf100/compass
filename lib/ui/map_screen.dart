@@ -187,6 +187,12 @@ class _MapScreenState extends State<MapScreen>
     final old = _previousMap;
     final next = _activeMap;
     if (old == next) return;
+    if (_mode == MapMode.onlineNaver && old != next) {
+      // A previous auth/load error can have been caused by a transient outage.
+      // Give the new native map a fresh attempt; a persistent error is reported
+      // again by the SDK or caught by the load timeout.
+      widget.mapError.value = null;
+    }
     final camera = old is CameraAwareMapProvider
         ? (old as CameraAwareMapProvider).cameraState : null;
     if (camera != null) _handoffCamera = camera;
@@ -201,9 +207,6 @@ class _MapScreenState extends State<MapScreen>
     _mapOperationError = null;
     _mapGeneration++;
     if (next != null) _armMapTimeout();
-    if (_mode == MapMode.onlineNaver && widget.mapError.value != null) {
-      widget.mapMode?.naverFailure();
-    }
     _syncMapOverlays();
     if (mounted) setState(() {});
   }
@@ -252,6 +255,7 @@ class _MapScreenState extends State<MapScreen>
   }
 
   void _retryMap() {
+    widget.mapError.value = null;
     widget.mapMode?.retryNaver();
     _activeMap?.reset();
     setState(() {
@@ -535,9 +539,17 @@ class _MapScreenState extends State<MapScreen>
           ),
           if (_mode != MapMode.onlineNaver)
             Align(alignment: Alignment.centerLeft,
-              child: Chip(visualDensity: VisualDensity.compact,
-                label: Text(_mode == MapMode.offlineMapbox
-                    ? '오프라인 지도' : '오프라인 · 지도 없음'))),
+              child: widget.mapConfigured && controller.hasNetwork != false
+                  ? ActionChip(
+                      visualDensity: VisualDensity.compact,
+                      label: Text(_mode == MapMode.offlineMapbox
+                          ? '오프라인 지도 · 온라인 재시도'
+                          : '오프라인 · 지도 없음 · 온라인 재시도'),
+                      onPressed: widget.mapMode?.retryNaver,
+                    )
+                  : Chip(visualDensity: VisualDensity.compact,
+                      label: Text(_mode == MapMode.offlineMapbox
+                          ? '오프라인 지도' : '오프라인 · 지도 없음'))),
           if (widget.roomController?.room != null)
             Padding(
               padding: const EdgeInsets.only(top: 6),

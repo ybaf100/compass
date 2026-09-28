@@ -36,17 +36,52 @@ for path in (root / 'android/app/build.gradle.kts',
     gradle = gradle.replace('compileSdkVersion flutter.compileSdkVersion', 'compileSdkVersion 36')
     path.write_text(gradle)
 
-# Mapbox 2.31 uses AGP 9's built-in Kotlin rather than applying KGP. Flutter's
-# template currently disables it for legacy plugins; opt in for this app so
-# the Mapbox Android module receives the `kotlin {}` extension it configures.
+# Naver 1.4 applies the legacy Kotlin Gradle plugin while Mapbox 2.31 only
+# applies it when AGP is below 9. Pin a common AGP 8 toolchain until both
+# upstream plugins support AGP 9's built-in Kotlin together.
+settings = root / 'android/settings.gradle.kts'
+if settings.exists():
+    contents = settings.read_text()
+    contents, count = re.subn(
+        r'id\("com\.android\.application"\) version "[^"]+" apply false',
+        'id("com.android.application") version "8.10.1" apply false', contents)
+    if count != 1:
+        raise RuntimeError('Flutter AGP version anchor not found')
+    contents, count = re.subn(
+        r'id\("org\.jetbrains\.kotlin\.android"\) version "[^"]+" apply false',
+        'id("org.jetbrains.kotlin.android") version "2.2.20" apply false',
+        contents)
+    if count != 1:
+        raise RuntimeError('Flutter Kotlin version anchor not found')
+    settings.write_text(contents)
+
+app_gradle = root / 'android/app/build.gradle.kts'
+if app_gradle.exists():
+    contents = app_gradle.read_text()
+    anchor = '    id("com.android.application")\n'
+    if '    id("org.jetbrains.kotlin.android")\n' not in contents:
+        if anchor not in contents:
+            raise RuntimeError('Flutter Android app plugin anchor not found')
+        contents = contents.replace(anchor,
+            anchor + '    id("org.jetbrains.kotlin.android")\n', 1)
+    app_gradle.write_text(contents)
+
+wrapper = root / 'android/gradle/wrapper/gradle-wrapper.properties'
+if wrapper.exists():
+    contents, count = re.subn(r'gradle-[0-9.]+-all\.zip',
+                              'gradle-8.14-all.zip', wrapper.read_text())
+    if count != 1:
+        raise RuntimeError('Gradle wrapper version anchor not found')
+    wrapper.write_text(contents)
+
 gradle_properties = root / 'android/gradle.properties'
 if gradle_properties.exists():
     properties = gradle_properties.read_text()
     properties = re.sub(r'^android\.builtInKotlin=.*$',
-                        'android.builtInKotlin=true', properties,
+                        'android.builtInKotlin=false', properties,
                         flags=re.MULTILINE)
     if 'android.builtInKotlin=' not in properties:
-        properties += '\nandroid.builtInKotlin=true\n'
+        properties += '\nandroid.builtInKotlin=false\n'
     gradle_properties.write_text(properties)
 
 info = root / 'ios/Runner/Info.plist'
