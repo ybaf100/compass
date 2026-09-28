@@ -5,6 +5,7 @@ import 'package:destination_compass/offline/offline_region.dart';
 import 'package:destination_compass/offline/offline_region_repository.dart';
 import 'package:destination_compass/offline/offline_tile_backend.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _Store implements OfflineRegionRepository {
   List<OfflineRegion> saved = [];
@@ -67,6 +68,24 @@ void main() {
     expect(backend.ids, isEmpty);
     expect(store.saved, isEmpty);
     restored.dispose();
+  });
+
+  test('preferences repository round-trips region details', () async {
+    SharedPreferences.setMockInitialValues({});
+    final repository = PreferencesOfflineRegionRepository();
+    final region = OfflineRegion(id: 'r1', name: '송파구', center: center,
+      radiusMeters: 20000, minZoom: 0, maxZoom: 15,
+      downloadedAt: DateTime.utc(2026, 9, 28), sizeBytes: 12345678,
+      status: OfflineRegionStatus.ready);
+    await repository.save([region]);
+    final restored = (await repository.load()).single;
+    expect(restored.name, region.name);
+    expect(restored.center, center);
+    expect(restored.radiusMeters, 20000);
+    expect(restored.maxZoom, 15);
+    expect(restored.sizeBytes, 12345678);
+    expect(restored.downloadedAt, region.downloadedAt);
+    expect(restored.contains(center), isTrue);
   });
 
   test('failed download stays retryable and interrupted download never covers', () async {

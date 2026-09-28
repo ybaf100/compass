@@ -17,6 +17,7 @@ import 'package:destination_compass/room/shared_ping.dart';
 import 'package:destination_compass/room/room_snapshot_store.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _Clock {
   DateTime now = DateTime.utc(2026, 9, 27, 12);
@@ -401,5 +402,26 @@ void main() {
     expect(cache.value, isNull);
     nav.dispose(); personal.dispose(); controller.dispose();
     signals.dispose(); backend.dispose();
+  });
+
+  test('room snapshot preference cache round-trips shared coordinates', () async {
+    SharedPreferences.setMockInitialValues({});
+    final cache = PreferencesRoomSnapshotStore();
+    final now = DateTime.utc(2026, 9, 28);
+    await cache.save(RoomSnapshot(
+      room: Room(id: 'r1', inviteCode: 'ABC234', ownerId: 'a',
+        createdAt: now, sharedDestination: SharedDestination(
+          point: const GeoPoint(37.52, 127.1), name: '서울숲',
+          updatedBy: 'a', updatedAt: now)),
+      members: [RoomMember(userId: 'a', nickname: '철수',
+        point: const GeoPoint(37.5, 127.2), updatedAt: now)],
+      pings: [SharedPing(id: 'p1', point: const GeoPoint(37.6, 127.1),
+        createdBy: 'a', createdByNickname: '철수', createdAt: now)]));
+    final loaded = await cache.load();
+    expect(loaded?.room.sharedDestination?.point, const GeoPoint(37.52, 127.1));
+    expect(loaded?.members.single.point, const GeoPoint(37.5, 127.2));
+    expect(loaded?.pings.single.id, 'p1');
+    await cache.save(null);
+    expect(await cache.load(), isNull);
   });
 }

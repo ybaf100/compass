@@ -104,7 +104,9 @@ class NaverMapProvider implements MapProvider, CameraAwareMapProvider {
       try {
         final position = await controller.getCameraPosition();
         if (controller != _controller || _disposed ||
-            generation != _generation) return;
+            generation != _generation) {
+          return;
+        }
         _savedCamera = MapCameraState(GeoPoint(position.target.latitude,
             position.target.longitude), zoom: position.zoom,
             bearing: position.bearing, pitch: position.tilt);

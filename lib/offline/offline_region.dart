@@ -35,7 +35,8 @@ class OfflineRegion {
     final distance = radiusMeters / earthRadius;
     final positions = <List<double>>[];
     for (var index = 0; index < segments; index++) {
-      final bearing = 2 * math.pi * index / segments;
+      // GeoJSON exterior rings use counterclockwise winding.
+      final bearing = -2 * math.pi * index / segments;
       final lat = math.asin(math.sin(latitude) * math.cos(distance) +
           math.cos(latitude) * math.sin(distance) * math.cos(bearing));
       final lon = longitude + math.atan2(math.sin(bearing) *
