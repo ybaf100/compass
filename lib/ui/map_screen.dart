@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../core/geo_point.dart';
+import '../core/config/service_configuration.dart';
 import '../destination/destination_controller.dart';
 import '../destination/bearing_engine.dart';
 import '../map/map_provider.dart';
@@ -14,6 +15,7 @@ import '../room/room_controller.dart';
 import 'compass_panel.dart';
 import 'offline_maps_sheet.dart';
 import 'room_sheet.dart';
+import 'service_status_sheet.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({
@@ -27,6 +29,9 @@ class MapScreen extends StatefulWidget {
     this.offlineMapProvider,
     this.offlineMaps,
     this.mapMode,
+    this.configuration,
+    this.supabaseInitialized = true,
+    this.mapboxInitialized = true,
   });
 
   final DestinationController controller;
@@ -38,6 +43,9 @@ class MapScreen extends StatefulWidget {
   final MapProvider? offlineMapProvider;
   final OfflineMapController? offlineMaps;
   final MapModeController? mapMode;
+  final ServiceConfiguration? configuration;
+  final bool supabaseInitialized;
+  final bool mapboxInitialized;
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -514,17 +522,23 @@ class _MapScreenState extends State<MapScreen>
                     icon: const Icon(Icons.delete_outline, color: Colors.white),
                   ),
                 IconButton(
-                  tooltip: '오프라인 지도',
-                  onPressed: _showOfflineMaps,
-                  icon: const Icon(Icons.offline_pin_outlined,
-                    color: Colors.white),
-                ),
-                IconButton(
                   tooltip: '친구방',
                   onPressed: _showRoomSheet,
                   icon: Icon(Icons.people_alt_outlined,
                     color: widget.roomController?.room == null
                         ? Colors.white : const Color(0xFF69E1F5)),
+                ),
+                PopupMenuButton<String>(
+                  tooltip: '설정 및 오프라인 지도',
+                  icon: const Icon(Icons.more_vert, color: Colors.white),
+                  onSelected: (value) => value == 'offline'
+                      ? _showOfflineMaps() : _showServiceStatus(),
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(value: 'offline',
+                      child: Text('오프라인 지도')),
+                    PopupMenuItem(value: 'status',
+                      child: Text('서비스 상태')),
+                  ],
                 ),
                 IconButton(
                   tooltip: '내 위치로 이동',
@@ -700,6 +714,20 @@ class _MapScreenState extends State<MapScreen>
         heightFactor: 0.76, child: OfflineMapsSheet(controller: offline,
           currentPosition: widget.controller.location?.point,
           online: widget.controller.hasNetwork != false)));
+  }
+
+  void _showServiceStatus() {
+    final settings = widget.configuration;
+    if (settings == null) return;
+    showModalBottomSheet<void>(context: context, isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => ServiceStatusSheet(
+        naver: settings.naverStatus,
+        supabase: settings.supabaseStatus,
+        mapbox: settings.mapboxStatus,
+        naverError: widget.mapError.value,
+        supabaseInitialized: widget.supabaseInitialized,
+        mapboxInitialized: widget.mapboxInitialized));
   }
 
   void _showRoomSheet() {

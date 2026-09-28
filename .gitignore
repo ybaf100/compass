@@ -21,3 +21,4 @@ ios/Runner/GeneratedPluginRegistrant.*
 .DS_Store
 __pycache__/
 *.pyc
+config/defines.local.json

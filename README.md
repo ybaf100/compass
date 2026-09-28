@@ -2,6 +2,8 @@
 
 네이버 지도에서 목적지를 고르고, GPS 거리와 기기 방향 센서로 가리키는 Flutter 앱입니다. iOS, iPadOS, Android를 대상으로 합니다. 지도와 센서는 네이티브 SDK를 쓰고, 거리·방위각·화면은 하나의 Dart 코드베이스로 공유합니다.
 
+**실제 서비스 연결과 실기기 빌드:** [SETUP.md](SETUP.md) — 앱 식별자, Naver/Supabase/Mapbox 발급 순서, 로컬 설정 파일, GitHub Actions Variables, APK/IPA 다운로드, 기기 점검 및 문제 해결.
+
 ## 실행
 
 Flutter SDK(3.47 이상), Android SDK(36), iOS 개발용 Mac/Xcode 및 CocoaPods(iOS 빌드 시), Python 3가 필요합니다. 이 저장소의 `platform_overrides`는 `flutter create`로 생성된 프로젝트에 적용할 네이티브 센서 코드입니다. **최초 실행과 플랫폼 파일 재생성 시** 아래를 먼저 실행하세요.
@@ -10,7 +12,9 @@ Flutter SDK(3.47 이상), Android SDK(36), iOS 개발용 Mac/Xcode 및 CocoaPods
 bash tool/bootstrap.sh
 flutter test
 flutter analyze
-flutter run --dart-define=NAVER_MAP_CLIENT_ID=발급받은_Client_ID
+cp config/defines.example.json config/defines.local.json
+# config/defines.local.json에 발급받은 클라이언트 값을 입력한 뒤
+flutter run --dart-define-from-file=config/defines.local.json
 ```
 
 ## 친구방 설정
@@ -36,7 +40,7 @@ Mapbox의 **public** access token (`pk.`)을 `MAPBOX_ACCESS_TOKEN` dart-define�
 
 Android 부트스트랩은 네이버 지도 플러그인의 Kotlin Gradle Plugin과 Mapbox SDK의 AGP 9 조건부 설정이 함께 동작하도록 AGP 8.11.1, Gradle 8.14, Kotlin 2.2.20을 생성된 프로젝트에 지정합니다. 두 플러그인이 AGP 9 built-in Kotlin을 함께 지원하게 되면 이 호환성 고정을 해제할 수 있습니다.
 
-온라인일 때 상단 **오프라인 지도**에서 GPS 현재 위치 주변 5/20/50 km를 선택하고 용량을 추정한 뒤 내려받습니다. 실제 용량은 지역·줌·Mapbox 리소스에 따라 다릅니다. Mapbox 공식 Style Pack(`MAPBOX_STREETS`)과 Tile Region API를 사용하며 줌 0–15의 64각형 원형 영역을 저장합니다. 다운로드 중 진행률과 실패/재시도, 지역별 삭제 및 다운로드 용량 합계를 표시합니다. 겹친 타일과 공유 Style Pack 때문에 합계는 실제 앱의 물리적 저장 공간과 다를 수 있습니다. 타일 지역을 지워도 공유 Style Pack이나 다른 지역의 타일은 제거하지 않습니다.
+온라인일 때 상단 **설정 및 오프라인 지도 → 오프라인 지도**에서 GPS 현재 위치 주변 5/20/50 km를 선택하고 용량을 추정한 뒤 내려받습니다. 실제 용량은 지역·줌·Mapbox 리소스에 따라 다릅니다. Mapbox 공식 Style Pack(`MAPBOX_STREETS`)과 Tile Region API를 사용하며 줌 0–15의 64각형 원형 영역을 저장합니다. 다운로드 중 진행률과 실패/재시도, 지역별 삭제 및 다운로드 용량 합계를 표시합니다. 겹친 타일과 공유 Style Pack 때문에 합계는 실제 앱의 물리적 저장 공간과 다를 수 있습니다. 타일 지역을 지워도 공유 Style Pack이나 다른 지역의 타일은 제거하지 않습니다.
 
 연결이 끊기거나 네이버 지도 인증·로드가 실패하면 현재 GPS 위치를 포함하는 다운로드 지역이 있는 경우 Mapbox 지도만 전환합니다. 연결이 돌아오면 짧은 안정화 시간 뒤 네이버 지도를 다시 로드합니다. 나침반·개인 목적지·Room은 지도 위젯과 별도로 유지됩니다. 오프라인의 친구 위치와 공유 목적지는 마지막 동기화 정보로 명시하고, Ping 및 공유 목적지 변경은 연결이 돌아올 때까지 비활성화합니다. 마지막 Room 스냅샷의 유효 Ping은 30분이 지나면 사라집니다. 백그라운드 다운로드와 오프라인 변경 대기열은 지원하지 않습니다.
 
@@ -44,7 +48,7 @@ Android 부트스트랩은 네이버 지도 플러그인의 Kotlin Gradle Plugin
 
 위치는 기존 GPS 입력을 재사용하며 정확도 80m 이하에서만 전송합니다. 최소 2초 간격을 두고, 8m 이상 이동하거나 8초가 지나면 갱신합니다. Ping은 최근 20개 또는 30분 이내로 제한합니다. 친구 마커의 작은 이동은 짧게 보간하며, 먼 이동과 오래된 정보는 즉시 표시합니다.
 
-네이버 클라우드 Maps에서 **Mobile Dynamic Map**을 신청한 후 Android 패키지 이름과 iOS Bundle ID를 모두 등록해야 합니다. 기본 Android 패키지 이름은 `com.example.destination_compass`입니다. 생성된 iOS Bundle ID는 `ios/Runner.xcodeproj/project.pbxproj`의 `PRODUCT_BUNDLE_IDENTIFIER`에서 확인하세요. 플랫폼 ID를 바꾼 경우 네이버 콘솔의 등록값과 일치시킵니다. Client ID는 `--dart-define`으로 주입하며 저장소에 넣지 않습니다. ID가 없어도 앱은 시작하고 이유를 보여주지만 지도는 나오지 않습니다.
+네이버 클라우드 VPC Maps Application에서 **Dynamic Map**을 선택하고 Android 패키지 이름과 iOS Bundle ID에 모두 `com.ybaf100.compass`를 등록합니다. 해당 Application의 Client ID를 앱에 전달합니다. 상세 단계는 [SETUP.md](SETUP.md)에 있습니다. ID가 없어도 앱은 시작하고 이유를 보여주지만 온라인 지도는 나오지 않습니다.
 
 Android:
 
