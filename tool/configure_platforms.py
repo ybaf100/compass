@@ -30,8 +30,8 @@ for path in (root / 'android/app/build.gradle.kts',
     if not path.exists():
         continue
     gradle = path.read_text()
-    gradle = gradle.replace('minSdk = flutter.minSdkVersion', 'minSdk = 23')
-    gradle = gradle.replace('minSdkVersion flutter.minSdkVersion', 'minSdkVersion 23')
+    gradle = gradle.replace('minSdk = flutter.minSdkVersion', 'minSdk = 24')
+    gradle = gradle.replace('minSdkVersion flutter.minSdkVersion', 'minSdkVersion 24')
     gradle = gradle.replace('compileSdk = flutter.compileSdkVersion', 'compileSdk = 36')
     gradle = gradle.replace('compileSdkVersion flutter.compileSdkVersion', 'compileSdkVersion 36')
     path.write_text(gradle)
@@ -103,10 +103,10 @@ podfile = root / 'ios/Podfile'
 if podfile.exists():
     pod = podfile.read_text()
     if re.search(r'^\s*#?\s*platform :ios,', pod, re.MULTILINE):
-        pod = re.sub(r'^\s*#?\s*platform :ios,.*$', "platform :ios, '14.0'",
+        pod = re.sub(r'^\s*#?\s*platform :ios,.*$', "platform :ios, '15.0'",
                      pod, count=1, flags=re.MULTILINE)
     else:
-        pod = "platform :ios, '14.0'\n" + pod
+        pod = "platform :ios, '15.0'\n" + pod
     flag = "BYPASS_PERMISSION_LOCATION_ALWAYS=1"
     if flag not in pod:
         anchor = 'flutter_additional_ios_build_settings(target)'
@@ -123,5 +123,5 @@ project = root / 'ios/Runner.xcodeproj/project.pbxproj'
 if project.exists():
     text = project.read_text()
     text = re.sub(r'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;',
-                  'IPHONEOS_DEPLOYMENT_TARGET = 14.0;', text)
+                  'IPHONEOS_DEPLOYMENT_TARGET = 15.0;', text)
     project.write_text(text)

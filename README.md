@@ -32,7 +32,7 @@ flutter run \
 
 ## 오프라인 지도
 
-Mapbox의 **public** access token (`pk.`)을 `MAPBOX_ACCESS_TOKEN` dart-define으로 주입합니다. secret token은 모바일 앱에 넣지 마세요. 토큰이 없으면 오프라인 지도만 비활성화되고 네이버 지도·나침반·친구방은 계속 사용할 수 있습니다. iOS 14 이상과 Android 23 이상이 필요합니다.
+Mapbox의 **public** access token (`pk.`)을 `MAPBOX_ACCESS_TOKEN` dart-define으로 주입합니다. secret token은 모바일 앱에 넣지 마세요. 토큰이 없으면 오프라인 지도만 비활성화되고 네이버 지도·나침반·친구방은 계속 사용할 수 있습니다. 이 프로젝트는 iOS/iPadOS 15 이상과 Android API 24 이상을 대상으로 합니다.
 
 Android 부트스트랩은 네이버 지도 플러그인의 Kotlin Gradle Plugin과 Mapbox SDK의 AGP 9 조건부 설정이 함께 동작하도록 AGP 8.11.1, Gradle 8.14, Kotlin 2.2.20을 생성된 프로젝트에 지정합니다. 두 플러그인이 AGP 9 built-in Kotlin을 함께 지원하게 되면 이 호환성 고정을 해제할 수 있습니다.
 
