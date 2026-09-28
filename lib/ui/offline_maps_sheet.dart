@@ -138,7 +138,7 @@ class _OfflineMapsSheetState extends State<OfflineMapsSheet> {
                             ? () => _download(region) : null,
                         icon: const Icon(Icons.refresh)),
                     IconButton(tooltip: '지역 삭제',
-                      onPressed: maps.downloadingId == region.id
+                      onPressed: !maps.configured || maps.downloadingId == region.id
                           ? null : () => _delete(region),
                       icon: const Icon(Icons.delete_outline)),
                   ])),

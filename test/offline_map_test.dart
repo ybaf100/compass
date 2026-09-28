@@ -88,6 +88,18 @@ void main() {
     expect(restored.contains(center), isTrue);
   });
 
+  test('missing Mapbox configuration never discards undeleted tile metadata', () async {
+    final store = _Store();
+    final offline = OfflineMapController(repository: store, backend: null);
+    final region = offline.draft(center, 5);
+    store.saved = [region];
+    await offline.start();
+    await expectLater(offline.delete(region), throwsStateError);
+    expect(offline.regions.single.id, region.id);
+    expect(store.saved.single.id, region.id);
+    offline.dispose();
+  });
+
   test('failed download stays retryable and interrupted download never covers', () async {
     final store = _Store(), backend = _Backend()..fail = true;
     final downloads = OfflineMapController(repository: store, backend: backend);

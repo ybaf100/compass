@@ -139,8 +139,12 @@ class OfflineMapController extends ChangeNotifier {
 
   Future<void> delete(OfflineRegion region) async {
     if (downloadingId == region.id) throw StateError('다운로드 중에는 삭제할 수 없습니다.');
-    if (_backend != null && await _backend.exists(region.id)) {
-      await _backend.delete(region.id);
+    final backend = _backend;
+    if (backend == null) {
+      throw StateError('Mapbox 설정 후 저장된 지도를 삭제할 수 있습니다.');
+    }
+    if (await backend.exists(region.id)) {
+      await backend.delete(region.id);
     }
     regions = regions.where((item) => item.id != region.id).toList();
     _notify();
