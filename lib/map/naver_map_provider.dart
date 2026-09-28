@@ -79,15 +79,22 @@ class NaverMapProvider implements MapProvider, CameraAwareMapProvider {
       symbol.caption,
     ),
     onCameraChange: (reason, _) {
-      final position = _controller?.nowCameraPosition;
-      if (position != null) {
-        _savedCamera = MapCameraState(GeoPoint(position.target.latitude,
-            position.target.longitude), zoom: position.zoom,
-            bearing: position.bearing, pitch: position.tilt);
-      }
       if (reason == NCameraUpdateReason.gesture ||
           reason == NCameraUpdateReason.control) {
         onGesture();
+      }
+    },
+    onCameraIdle: () async {
+      final controller = _controller;
+      if (controller == null || _disposed) return;
+      try {
+        final position = await controller.getCameraPosition();
+        if (controller != _controller || _disposed) return;
+        _savedCamera = MapCameraState(GeoPoint(position.target.latitude,
+            position.target.longitude), zoom: position.zoom,
+            bearing: position.bearing, pitch: position.tilt);
+      } catch (_) {
+        // Native map may have been detached during provider switching.
       }
     },
   );

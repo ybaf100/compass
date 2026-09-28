@@ -70,7 +70,9 @@ class OfflineRegion {
     final radius = json['radiusMeters'];
     final id = json['id'];
     if (latitude is! num || longitude is! num || radius is! num ||
-        id is! String || radius <= 0) return null;
+        id is! String || radius <= 0) {
+      return null;
+    }
     final center = GeoPoint(latitude.toDouble(), longitude.toDouble());
     if (!center.isValid) return null;
     final status = OfflineRegionStatus.values.where(

@@ -47,6 +47,7 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
             const GeoPoint(37.5666, 126.979));
     return mb.MapWidget(
       styleUri: MapboxTileBackend.styleUri,
+      // ignore: deprecated_member_use
       cameraOptions: mb.CameraOptions(center: _point(initial.center),
         zoom: initial.zoom, bearing: initial.bearing, pitch: initial.pitch),
       onMapCreated: (map) {
@@ -55,9 +56,11 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
         unawaited(_initialize(map, generation));
       },
       onMapLoadedListener: (_) => onLoaded(),
+      // ignore: deprecated_member_use
       onTapListener: (context) => onPicked(GeoPoint(
         context.point.coordinates.lat.toDouble(),
         context.point.coordinates.lng.toDouble())),
+      // ignore: deprecated_member_use
       onLongTapListener: (context) => onPicked(GeoPoint(
         context.point.coordinates.lat.toDouble(),
         context.point.coordinates.lng.toDouble())),
@@ -102,12 +105,16 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
     final labels = _labels;
     if (circles == null || labels == null) return;
     final entries = <String, (GeoPoint, String, int, double)>{};
-    if (_location != null) entries['user'] =
-        (_location!.point, '나', 0xFF2288E5, 1);
-    if (_destination != null) entries['destination'] =
-        (_destination!.point, _destination!.title, 0xFFEE643D, _pinReveal);
-    if (_candidate != null) entries['candidate'] =
-        (_candidate!, '선택한 위치', 0xFF2C67D9, 1);
+    if (_location != null) {
+      entries['user'] = (_location!.point, '나', 0xFF2288E5, 1);
+    }
+    if (_destination != null) {
+      entries['destination'] =
+          (_destination!.point, _destination!.title, 0xFFEE643D, _pinReveal);
+    }
+    if (_candidate != null) {
+      entries['candidate'] = (_candidate!, '선택한 위치', 0xFF2C67D9, 1);
+    }
     for (final member in _members) {
       entries['member_${member.id}'] = (member.point, member.name,
           member.isStale ? 0xFF8796A0 : 0xFF39C2A4, 1);
@@ -118,7 +125,9 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
     for (final id in _pins.keys.toList()) {
       if (entries.containsKey(id)) continue;
       await circles.delete(_pins.remove(id)!);
-      if (_text.containsKey(id)) await labels.delete(_text.remove(id)!);
+      if (_text.containsKey(id)) {
+        await labels.delete(_text.remove(id)!);
+      }
     }
     _memberPinIds.clear();
     for (final entry in entries.entries) {
@@ -176,7 +185,9 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
   @override
   Future<void> setDestination(Destination? destination) {
     if (_destination?.point == destination?.point &&
-        _destination?.name == destination?.name) return Future<void>.value();
+        _destination?.name == destination?.name) {
+      return Future<void>.value();
+    }
     _destination = destination;
     return _enqueue(_reconcile);
   }
@@ -207,8 +218,10 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
     _location = location;
     return _enqueue(() async {
       await _reconcile();
-      if (follow && location != null) await moveCamera(location.point,
-        zoom: _savedCamera == null ? 16 : null);
+      if (follow && location != null) {
+        await moveCamera(location.point,
+          zoom: _savedCamera == null ? 16 : null);
+      }
     });
   }
 

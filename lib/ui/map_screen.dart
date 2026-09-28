@@ -168,11 +168,13 @@ class _MapScreenState extends State<MapScreen>
                 member.isStale(state.currentTime, RoomController.staleAfter)),
     ]);
     final map = _activeMap;
-    if (map != null) _runMap(map.setSharedPings([
-      for (final ping in state.activePings)
-        MapPingOverlay(id: ping.id, point: ping.point,
-          label: '${ping.createdByNickname} · Ping'),
-    ]));
+    if (map != null) {
+      _runMap(map.setSharedPings([
+        for (final ping in state.activePings)
+          MapPingOverlay(id: ping.id, point: ping.point,
+            label: '${ping.createdByNickname} · Ping'),
+      ]));
+    }
     if (mounted) setState(() {});
   }
 
@@ -184,11 +186,12 @@ class _MapScreenState extends State<MapScreen>
     final old = _previousMap;
     final next = _activeMap;
     if (old == next) return;
-    final camera = old is CameraAwareMapProvider ? old.cameraState : null;
+    final camera = old is CameraAwareMapProvider
+        ? (old as CameraAwareMapProvider).cameraState : null;
     old?.reset();
     _previousMap = next;
     if (camera != null && next is CameraAwareMapProvider) {
-      _runMap(next.restoreCamera(camera));
+      _runMap((next as CameraAwareMapProvider).restoreCamera(camera));
     }
     _mapTimeout?.cancel();
     _mapLoaded = false;
@@ -412,7 +415,9 @@ class _MapScreenState extends State<MapScreen>
               if (mounted) {
                 _syncMapOverlays();
                 if (_mode == MapMode.onlineNaver &&
-                    widget.mapError.value == null) widget.mapMode?.naverLoaded();
+                    widget.mapError.value == null) {
+                  widget.mapMode?.naverLoaded();
+                }
                 setState(() {
                   _mapLoaded = true;
                   _mapTimedOut = false;

@@ -129,7 +129,7 @@ class _OfflineMapsSheetState extends State<OfflineMapsSheet> {
                     OfflineRegionStatus.failed =>
                       region.failure ?? '다운로드 실패 · 재시도 가능',
                   }),
-                  trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                     if (region.status == OfflineRegionStatus.failed)
                       IconButton(tooltip: '다시 시도',
                         onPressed: widget.online && maps.downloadingId == null
