@@ -4,7 +4,7 @@
 
 ## 실행
 
-Flutter SDK(3.35 이상), Android SDK(36), iOS 개발용 Mac/Xcode 및 CocoaPods(iOS 빌드 시), Python 3가 필요합니다. 이 저장소의 `platform_overrides`는 `flutter create`로 생성된 프로젝트에 적용할 네이티브 센서 코드입니다. **최초 실행과 플랫폼 파일 재생성 시** 아래를 먼저 실행하세요.
+Flutter SDK(3.47 이상), Android SDK(36), iOS 개발용 Mac/Xcode 및 CocoaPods(iOS 빌드 시), Python 3가 필요합니다. 이 저장소의 `platform_overrides`는 `flutter create`로 생성된 프로젝트에 적용할 네이티브 센서 코드입니다. **최초 실행과 플랫폼 파일 재생성 시** 아래를 먼저 실행하세요.
 
 ```bash
 bash tool/bootstrap.sh
@@ -24,10 +24,21 @@ bash tool/bootstrap.sh
 flutter run \
   --dart-define=NAVER_MAP_CLIENT_ID=발급받은_Client_ID \
   --dart-define=SUPABASE_URL=https://프로젝트.supabase.co \
-  --dart-define=SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+  --dart-define=SUPABASE_PUBLISHABLE_KEY=sb_publishable_... \
+  --dart-define=MAPBOX_ACCESS_TOKEN=pk....
 ```
 
 `SUPABASE_URL` 또는 `SUPABASE_PUBLISHABLE_KEY`가 비어 있으면 친구방 UI에서 설정 안내를 보여주며 개인 목적지는 그대로 작동합니다. 값은 저장소에 커밋하지 않습니다. Supabase 프로젝트 자체와 데이터베이스 마이그레이션은 별도로 준비해야 합니다.
+
+## 오프라인 지도
+
+Mapbox의 **public** access token (`pk.`)을 `MAPBOX_ACCESS_TOKEN` dart-define으로 주입합니다. secret token은 모바일 앱에 넣지 마세요. 토큰이 없으면 오프라인 지도만 비활성화되고 네이버 지도·나침반·친구방은 계속 사용할 수 있습니다. 이 프로젝트는 iOS/iPadOS 15 이상과 Android API 24 이상을 대상으로 합니다.
+
+Android 부트스트랩은 네이버 지도 플러그인의 Kotlin Gradle Plugin과 Mapbox SDK의 AGP 9 조건부 설정이 함께 동작하도록 AGP 8.11.1, Gradle 8.14, Kotlin 2.2.20을 생성된 프로젝트에 지정합니다. 두 플러그인이 AGP 9 built-in Kotlin을 함께 지원하게 되면 이 호환성 고정을 해제할 수 있습니다.
+
+온라인일 때 상단 **오프라인 지도**에서 GPS 현재 위치 주변 5/20/50 km를 선택하고 용량을 추정한 뒤 내려받습니다. 실제 용량은 지역·줌·Mapbox 리소스에 따라 다릅니다. Mapbox 공식 Style Pack(`MAPBOX_STREETS`)과 Tile Region API를 사용하며 줌 0–15의 64각형 원형 영역을 저장합니다. 다운로드 중 진행률과 실패/재시도, 지역별 삭제 및 다운로드 용량 합계를 표시합니다. 겹친 타일과 공유 Style Pack 때문에 합계는 실제 앱의 물리적 저장 공간과 다를 수 있습니다. 타일 지역을 지워도 공유 Style Pack이나 다른 지역의 타일은 제거하지 않습니다.
+
+연결이 끊기거나 네이버 지도 인증·로드가 실패하면 현재 GPS 위치를 포함하는 다운로드 지역이 있는 경우 Mapbox 지도만 전환합니다. 연결이 돌아오면 짧은 안정화 시간 뒤 네이버 지도를 다시 로드합니다. 나침반·개인 목적지·Room은 지도 위젯과 별도로 유지됩니다. 오프라인의 친구 위치와 공유 목적지는 마지막 동기화 정보로 명시하고, Ping 및 공유 목적지 변경은 연결이 돌아올 때까지 비활성화합니다. 마지막 Room 스냅샷의 유효 Ping은 30분이 지나면 사라집니다. 백그라운드 다운로드와 오프라인 변경 대기열은 지원하지 않습니다.
 
 첫 친구방 사용 시 닉네임을 입력하면 익명 사용자 ID가 생성됩니다. 닉네임과 참가 중인 Room ID는 기기에 저장되고, 인증 세션은 Supabase SDK가 복원합니다. 방에서 나가면 즉시 로컬 위치 업로드와 구독을 중지합니다. 서버 나가기 요청에 실패하면 다음 연결에서 재시도합니다. 앱이 백그라운드에 있으면 위치를 업로드하지 않습니다. 친구 위치는 35초가 지나면 오래된 정보로 표시합니다.
 
@@ -60,7 +71,8 @@ flutter build ios --simulator --debug --dart-define=NAVER_MAP_CLIENT_ID=발급�
 | `lib/core/location` | 권한 상태 및 GPS 스트림 |
 | `lib/core/compass` | 네이티브 heading 채널 및 원형 노이즈 필터 |
 | `lib/destination` | 목적지 모델, 저장, 거리·방위각, 상태 조정 |
-| `lib/map` | MapProvider와 네이버 지도 SDK 어댑터 |
+| `lib/map` | MapProvider, 네이버/Mapbox SDK 어댑터 및 지도 전환 상태 |
+| `lib/offline` | 다운로드 영역·메타데이터·Mapbox 타일 저장소 |
 | `lib/ui` | 지도 화면, 스와이프 패널, 프레임 기반 화살표 애니메이션 |
 | `platform_overrides` | Android 회전 벡터 및 iOS Core Location heading |
 
@@ -74,6 +86,6 @@ flutter build ios --simulator --debug --dart-define=NAVER_MAP_CLIENT_ID=발급�
 
 `compass-ios-sideload-unsigned.ipa`는 arm64 iOS 실기기용 release 바이너리를 `Payload/Runner.app` 형식으로 묶은 것입니다. 서명 없이 직접 설치할 수는 없으며 SideStore 같은 사이드로드 앱에서 **IPA를 선택하고 본인 Apple 계정으로 서명**해야 합니다. 시뮬레이터 ZIP은 실기기에 설치할 수 없습니다. SideStore에서 비ASCII 앱 이름으로 App ID 등록 오류가 발생하지 않도록 사이드로드 IPA의 홈 화면 표시 이름만 `Compass`로 설정했습니다. IPA의 실제 설치·GPS·heading·지도 인증은 실기기에서 확인해야 합니다.
 
-CI 빌드에서 네이버 지도와 친구방을 사용하려면 저장소 **Settings → Secrets and variables → Actions → Variables**에 `NAVER_MAP_CLIENT_ID`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`를 등록하고 빌드를 다시 실행하세요. 값이 없는 빌드도 컴파일되지만 지도와 친구방이 동작하지 않습니다. 앱에 포함되는 값이므로 Supabase **service_role** 키는 절대 사용하지 마세요. 네이버 Maps에 등록한 Android 패키지 이름과 iOS Bundle ID가 실제 설치된 앱과 일치해야 합니다. 사이드로드 도구가 iOS Bundle ID를 다시 쓰면 네이버 인증에 사용할 등록값도 확인해야 합니다.
+CI 빌드에서 온라인 지도·친구방·오프라인 지도를 사용하려면 저장소 **Settings → Secrets and variables → Actions → Variables**에 `NAVER_MAP_CLIENT_ID`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `MAPBOX_ACCESS_TOKEN`을 등록하고 빌드를 다시 실행하세요. 값이 없는 빌드도 컴파일되지만 해당 서비스는 동작하지 않습니다. 앱에 포함되는 값이므로 Supabase **service_role** 키나 Mapbox secret token은 절대 사용하지 마세요. 네이버 Maps에 등록한 Android 패키지 이름과 iOS Bundle ID가 실제 설치된 앱과 일치해야 합니다. 사이드로드 도구가 iOS Bundle ID를 다시 쓰면 네이버 인증에 사용할 등록값도 확인해야 합니다.
 
 Room 테스트는 같은 가짜 저장소를 쓰는 두 클라이언트의 생성·참가·위치·Ping·공유 목적지·친구 추적·퇴장 흐름을 검증합니다. 실기기에서는 GPS 권한 거부/재허용, 지도 인증과 핀, 가로 모드, 359°↔0° 회전, 자기장 교란, 고주사율 애니메이션, 서로 다른 기기의 Room 동기화와 재연결을 확인하세요.

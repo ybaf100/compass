@@ -30,11 +30,59 @@ for path in (root / 'android/app/build.gradle.kts',
     if not path.exists():
         continue
     gradle = path.read_text()
-    gradle = gradle.replace('minSdk = flutter.minSdkVersion', 'minSdk = 23')
-    gradle = gradle.replace('minSdkVersion flutter.minSdkVersion', 'minSdkVersion 23')
+    gradle = gradle.replace('minSdk = flutter.minSdkVersion', 'minSdk = 24')
+    gradle = gradle.replace('minSdkVersion flutter.minSdkVersion', 'minSdkVersion 24')
     gradle = gradle.replace('compileSdk = flutter.compileSdkVersion', 'compileSdk = 36')
     gradle = gradle.replace('compileSdkVersion flutter.compileSdkVersion', 'compileSdkVersion 36')
     path.write_text(gradle)
+
+# Naver 1.4 applies the legacy Kotlin Gradle plugin while Mapbox 2.31 only
+# applies it when AGP is below 9. Pin a common AGP 8 toolchain until both
+# upstream plugins support AGP 9's built-in Kotlin together.
+settings = root / 'android/settings.gradle.kts'
+if settings.exists():
+    contents = settings.read_text()
+    contents, count = re.subn(
+        r'id\("com\.android\.application"\) version "[^"]+" apply false',
+        'id("com.android.application") version "8.11.1" apply false', contents)
+    if count != 1:
+        raise RuntimeError('Flutter AGP version anchor not found')
+    contents, count = re.subn(
+        r'id\("org\.jetbrains\.kotlin\.android"\) version "[^"]+" apply false',
+        'id("org.jetbrains.kotlin.android") version "2.2.20" apply false',
+        contents)
+    if count != 1:
+        raise RuntimeError('Flutter Kotlin version anchor not found')
+    settings.write_text(contents)
+
+app_gradle = root / 'android/app/build.gradle.kts'
+if app_gradle.exists():
+    contents = app_gradle.read_text()
+    anchor = '    id("com.android.application")\n'
+    if '    id("org.jetbrains.kotlin.android")\n' not in contents:
+        if anchor not in contents:
+            raise RuntimeError('Flutter Android app plugin anchor not found')
+        contents = contents.replace(anchor,
+            anchor + '    id("org.jetbrains.kotlin.android")\n', 1)
+    app_gradle.write_text(contents)
+
+wrapper = root / 'android/gradle/wrapper/gradle-wrapper.properties'
+if wrapper.exists():
+    contents, count = re.subn(r'gradle-[0-9.]+-all\.zip',
+                              'gradle-8.14-all.zip', wrapper.read_text())
+    if count != 1:
+        raise RuntimeError('Gradle wrapper version anchor not found')
+    wrapper.write_text(contents)
+
+gradle_properties = root / 'android/gradle.properties'
+if gradle_properties.exists():
+    properties = gradle_properties.read_text()
+    properties = re.sub(r'^android\.builtInKotlin=.*$',
+                        'android.builtInKotlin=false', properties,
+                        flags=re.MULTILINE)
+    if 'android.builtInKotlin=' not in properties:
+        properties += '\nandroid.builtInKotlin=false\n'
+    gradle_properties.write_text(properties)
 
 info = root / 'ios/Runner/Info.plist'
 with info.open('rb') as file:
@@ -55,10 +103,10 @@ podfile = root / 'ios/Podfile'
 if podfile.exists():
     pod = podfile.read_text()
     if re.search(r'^\s*#?\s*platform :ios,', pod, re.MULTILINE):
-        pod = re.sub(r'^\s*#?\s*platform :ios,.*$', "platform :ios, '13.0'",
+        pod = re.sub(r'^\s*#?\s*platform :ios,.*$', "platform :ios, '15.0'",
                      pod, count=1, flags=re.MULTILINE)
     else:
-        pod = "platform :ios, '13.0'\n" + pod
+        pod = "platform :ios, '15.0'\n" + pod
     flag = "BYPASS_PERMISSION_LOCATION_ALWAYS=1"
     if flag not in pod:
         anchor = 'flutter_additional_ios_build_settings(target)'
@@ -75,5 +123,5 @@ project = root / 'ios/Runner.xcodeproj/project.pbxproj'
 if project.exists():
     text = project.read_text()
     text = re.sub(r'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;',
-                  'IPHONEOS_DEPLOYMENT_TARGET = 13.0;', text)
+                  'IPHONEOS_DEPLOYMENT_TARGET = 15.0;', text)
     project.write_text(text)

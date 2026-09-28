@@ -43,20 +43,23 @@ class NavigationTargetController extends ChangeNotifier {
       final shared = _room.room!.sharedDestination;
       return NavigationTarget(
         mode: mode, title: shared?.title ?? '모두의 목적지가 없습니다',
-        modeLabel: '모두의 목적지', point: shared?.point,
+        modeLabel: _room.showingLastSnapshot
+            ? '마지막으로 동기화된 모두의 목적지' : '모두의 목적지',
+        point: shared?.point,
+        notice: _room.showingLastSnapshot ? '오프라인 · 마지막 동기화 정보' : null,
       );
     }
     if (mode == TargetMode.member && _room.room != null) {
       final member = _room.member(targetMemberId ?? '');
       final name = member?.nickname ?? _lastMemberName ?? '친구';
-      final stale = member == null || member.isStale(
+      final stale = _room.showingLastSnapshot || member == null || member.isStale(
           _room.currentTime, RoomController.staleAfter);
       return NavigationTarget(
         mode: mode, title: name, modeLabel: '친구 따라가기',
         point: member?.point, memberId: targetMemberId,
-        notice: member == null ? '$name님이 방을 나갔습니다.'
+        notice: member == null ? '$name님의 마지막 위치를 확인할 수 없습니다.'
             : member.point == null ? '$name님의 위치가 없습니다.'
-            : stale ? '$name님의 위치가 오래되었습니다. 마지막 업데이트: '
+            : stale ? '$name님의 위치가 오래되었습니다. 마지막 위치 기준 · 마지막 업데이트: '
                 '${_age(_room.currentTime.difference(member.updatedAt))} 전' : null,
       );
     }

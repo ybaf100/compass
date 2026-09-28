@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_naver_map: 1.4.4
+  mapbox_maps_flutter: 2.31.1
   geolocator: ^14.0.3
   shared_preferences: ^2.5.5
   connectivity_plus: ^6.1.5

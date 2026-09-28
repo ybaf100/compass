@@ -1,16 +1,18 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../core/geo_point.dart';
 import '../destination/destination_controller.dart';
 import '../destination/bearing_engine.dart';
 import '../map/map_provider.dart';
+import '../map/map_mode_controller.dart';
 import '../map/member_marker_motion.dart';
+import '../offline/offline_map_controller.dart';
 import '../navigation/navigation_target.dart';
 import '../room/room_controller.dart';
 import 'compass_panel.dart';
+import 'offline_maps_sheet.dart';
 import 'room_sheet.dart';
 
 class MapScreen extends StatefulWidget {
@@ -22,14 +24,20 @@ class MapScreen extends StatefulWidget {
     required this.mapError,
     this.roomController,
     this.navigationController,
+    this.offlineMapProvider,
+    this.offlineMaps,
+    this.mapMode,
   });
 
   final DestinationController controller;
   final MapProvider mapProvider;
   final bool mapConfigured;
-  final ValueListenable<String?> mapError;
+  final ValueNotifier<String?> mapError;
   final RoomController? roomController;
   final NavigationTargetController? navigationController;
+  final MapProvider? offlineMapProvider;
+  final OfflineMapController? offlineMaps;
+  final MapModeController? mapMode;
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -45,15 +53,27 @@ class _MapScreenState extends State<MapScreen>
     vsync: this,
     duration: const Duration(milliseconds: 240),
     value: 1,
-  )..addListener(() => widget.mapProvider.setPinReveal(_pinReveal.value));
+  )..addListener(() => _activeMap?.setPinReveal(_pinReveal.value));
   late final Listenable _headingChanges = Listenable.merge([
     widget.controller.heading,
     widget.controller.filteredHeading,
   ]);
   late final MemberMarkerMotion _memberMotion = MemberMarkerMotion(
     vsync: this,
-    onFrame: (members) => _runMap(widget.mapProvider.setMembers(members)),
+    onFrame: (members) {
+      final map = _activeMap;
+      if (map != null) _runMap(map.setMembers(members));
+    },
   );
+
+  MapMode get _mode => widget.mapMode?.mode ?? MapMode.onlineNaver;
+  MapProvider? get _activeMap => switch (_mode) {
+    MapMode.onlineNaver => widget.mapProvider,
+    MapMode.offlineMapbox => widget.offlineMapProvider,
+    MapMode.mapUnavailable => null,
+  };
+  MapProvider? _previousMap;
+  MapCameraState? _handoffCamera;
 
   Timer? _mapTimeout;
   int _mapGeneration = 0;
@@ -72,7 +92,12 @@ class _MapScreenState extends State<MapScreen>
     widget.controller.addListener(_onControllerChanged);
     widget.roomController?.addListener(_onRoomChanged);
     widget.navigationController?.addListener(_onControllerChanged);
-    if (widget.mapConfigured) _armMapTimeout();
+    widget.mapMode?.addListener(_onMapModeChanged);
+    widget.mapError.addListener(_onNaverError);
+    _previousMap = _activeMap;
+    if (_activeMap != null) _armMapTimeout();
+    _onNaverError();
+    if (widget.offlineMaps != null) unawaited(widget.offlineMaps!.start());
     unawaited(widget.controller.start());
     if (widget.roomController != null) {
       unawaited(widget.roomController!.start());
@@ -91,6 +116,8 @@ class _MapScreenState extends State<MapScreen>
   }
 
   void _onControllerChanged() {
+    widget.mapMode?.update(connected: widget.controller.hasNetwork,
+      position: widget.controller.location?.point);
     final target = widget.navigationController?.target;
     final destination = widget.navigationController == null
         ? widget.controller.destination : target?.asDestination;
@@ -100,12 +127,15 @@ class _MapScreenState extends State<MapScreen>
       _pinReveal.forward(from: 0.15);
     }
     _lastDestinationPoint = point;
-    _runMap(widget.mapProvider.setDestination(destination));
-    _runMap(widget.mapProvider.setCandidate(widget.controller.selectedPoint));
-    _runMap(widget.mapProvider.setUserLocation(
+    final map = _activeMap;
+    if (map != null) {
+      _runMap(map.setDestination(destination));
+      _runMap(map.setCandidate(widget.controller.selectedPoint));
+      _runMap(map.setUserLocation(
       widget.controller.location,
       follow: _following,
-    ));
+      ));
+    }
     if (mounted) setState(() {});
   }
 
@@ -134,31 +164,100 @@ class _MapScreenState extends State<MapScreen>
         if (member.userId != state.userId && member.point != null)
           MapMemberOverlay(id: member.userId, name: member.nickname,
             point: member.point!, updatedAt: member.updatedAt,
-            isStale: member.isStale(state.currentTime, RoomController.staleAfter)),
+            isStale: state.showingLastSnapshot ||
+                member.isStale(state.currentTime, RoomController.staleAfter)),
     ]);
-    _runMap(widget.mapProvider.setSharedPings([
-      for (final ping in state.activePings)
-        MapPingOverlay(id: ping.id, point: ping.point,
-          label: '${ping.createdByNickname} · Ping'),
-    ]));
+    final map = _activeMap;
+    if (map != null) {
+      _runMap(map.setSharedPings([
+        for (final ping in state.activePings)
+          MapPingOverlay(id: ping.id, point: ping.point,
+            label: '${ping.createdByNickname} · Ping'),
+      ]));
+    }
     if (mounted) setState(() {});
   }
 
+  void _onNaverError() {
+    if (widget.mapError.value != null) widget.mapMode?.naverFailure();
+  }
+
+  void _onMapModeChanged() {
+    final old = _previousMap;
+    final next = _activeMap;
+    if (old == next) return;
+    if (_mode == MapMode.onlineNaver && old != next) {
+      // A previous auth/load error can have been caused by a transient outage.
+      // Give the new native map a fresh attempt; a persistent error is reported
+      // again by the SDK or caught by the load timeout.
+      widget.mapError.value = null;
+    }
+    final camera = old is CameraAwareMapProvider
+        ? (old as CameraAwareMapProvider).cameraState : null;
+    if (camera != null) _handoffCamera = camera;
+    old?.reset();
+    _previousMap = next;
+    if (_handoffCamera != null && next is CameraAwareMapProvider) {
+      _runMap((next as CameraAwareMapProvider).restoreCamera(_handoffCamera!));
+    }
+    _mapTimeout?.cancel();
+    _mapLoaded = false;
+    _mapTimedOut = false;
+    _mapOperationError = null;
+    _mapGeneration++;
+    if (next != null) _armMapTimeout();
+    _syncMapOverlays();
+    if (mounted) setState(() {});
+  }
+
+  void _syncMapOverlays() {
+    final map = _activeMap;
+    if (map == null) return;
+    final destination = widget.navigationController == null
+        ? widget.controller.destination
+        : widget.navigationController!.target?.asDestination;
+    _runMap(map.setDestination(destination));
+    _runMap(map.setCandidate(widget.controller.selectedPoint));
+    _runMap(map.setUserLocation(widget.controller.location, follow: _following));
+    final room = widget.roomController;
+    if (room != null) {
+      _runMap(map.setMembers([for (final member in room.members)
+        if (member.userId != room.userId && member.point != null)
+          MapMemberOverlay(id: member.userId, name: member.nickname,
+            point: member.point!, updatedAt: member.updatedAt,
+            isStale: room.showingLastSnapshot || member.isStale(
+              room.currentTime, RoomController.staleAfter)),
+      ]));
+      _runMap(map.setSharedPings([for (final ping in room.activePings)
+        MapPingOverlay(id: ping.id, point: ping.point,
+          label: '${ping.createdByNickname} · Ping')]));
+    }
+  }
+
   void _runMap(Future<void> operation) {
+    final providerAtStart = _activeMap;
     unawaited(operation.catchError((Object error) {
-      if (mounted) setState(() => _mapOperationError = '지도를 조작할 수 없습니다. 다시 시도하세요.');
+      if (mounted && providerAtStart == _activeMap) {
+        setState(() => _mapOperationError = '지도를 조작할 수 없습니다. 다시 시도하세요.');
+        if (_mode == MapMode.onlineNaver) widget.mapMode?.naverFailure();
+      }
     }));
   }
 
   void _armMapTimeout() {
     _mapTimeout?.cancel();
     _mapTimeout = Timer(const Duration(seconds: 18), () {
-      if (mounted && !_mapLoaded) setState(() => _mapTimedOut = true);
+      if (mounted && !_mapLoaded) {
+        setState(() => _mapTimedOut = true);
+        if (_mode == MapMode.onlineNaver) widget.mapMode?.naverFailure();
+      }
     });
   }
 
   void _retryMap() {
-    widget.mapProvider.reset();
+    widget.mapError.value = null;
+    widget.mapMode?.retryNaver();
+    _activeMap?.reset();
     setState(() {
       _mapGeneration++;
       _mapLoaded = false;
@@ -175,7 +274,8 @@ class _MapScreenState extends State<MapScreen>
       return;
     }
     setState(() => _following = true);
-    _runMap(widget.mapProvider.moveCamera(point, zoom: 16));
+    final map = _activeMap;
+    if (map != null) _runMap(map.moveCamera(point, zoom: 16));
   }
 
   @override
@@ -185,6 +285,8 @@ class _MapScreenState extends State<MapScreen>
     widget.controller.removeListener(_onControllerChanged);
     widget.roomController?.removeListener(_onRoomChanged);
     widget.navigationController?.removeListener(_onControllerChanged);
+    widget.mapMode?.removeListener(_onMapModeChanged);
+    widget.mapError.removeListener(_onNaverError);
     _memberMotion.dispose();
     _expansion.dispose();
     _pinReveal.dispose();
@@ -295,17 +397,24 @@ class _MapScreenState extends State<MapScreen>
   );
 
   Widget _buildMap(double collapsed) {
-    if (!widget.mapConfigured) {
-      return _mapNotice(
-        '네이버 지도 Client ID가 설정되지 않았습니다.',
-        '실행 시 --dart-define=NAVER_MAP_CLIENT_ID=발급받은_ID를 지정하세요.',
-      );
+    if (widget.mapMode == null && !widget.mapConfigured) {
+      return _mapNotice('네이버 지도 Client ID가 설정되지 않았습니다.',
+        '실행 시 --dart-define=NAVER_MAP_CLIENT_ID=발급받은_ID를 지정하세요.');
     }
+    if (_mode == MapMode.mapUnavailable || _activeMap == null) {
+      return _mapNotice('오프라인 · 이 지역의 지도가 없습니다.',
+        '화살표는 계속 사용할 수 있습니다. 온라인 복구 또는 지역 다운로드를 확인하세요.',
+        onRetry: widget.mapConfigured && widget.controller.hasNetwork != false
+            ? widget.mapMode?.retryNaver : null);
+    }
+    final map = _activeMap!;
     return Stack(children: [
       Positioned.fill(
-        child: KeyedSubtree(
-          key: ValueKey(_mapGeneration),
-          child: widget.mapProvider.buildMap(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          child: KeyedSubtree(
+          key: ValueKey('${_mode.name}_$_mapGeneration'),
+          child: map.buildMap(
             bottomPadding: collapsed + 8,
             onPicked: widget.controller.selectPoint,
             onNamedPlacePicked: (point, name) =>
@@ -313,6 +422,11 @@ class _MapScreenState extends State<MapScreen>
             onLoaded: () {
               _mapTimeout?.cancel();
               if (mounted) {
+                _syncMapOverlays();
+                if (_mode == MapMode.onlineNaver &&
+                    widget.mapError.value == null) {
+                  widget.mapMode?.naverLoaded();
+                }
                 setState(() {
                   _mapLoaded = true;
                   _mapTimedOut = false;
@@ -326,13 +440,16 @@ class _MapScreenState extends State<MapScreen>
             },
             onMemberTapped: _showMember,
           ),
+          ),
         ),
       ),
       ValueListenableBuilder<String?>(
         valueListenable: widget.mapError,
         builder: (context, authError, _) {
-          final message = authError ?? _mapOperationError ??
+          final message = (_mode == MapMode.onlineNaver ? authError : null) ??
+              _mapOperationError ??
               (widget.controller.hasNetwork == false
+                  && _mode == MapMode.onlineNaver
                   ? '온라인 지도를 불러올 수 없습니다.'
                   : _mapTimedOut ? '지도 로딩 시간이 초과되었습니다.' : null);
           if (message != null) {
@@ -397,6 +514,12 @@ class _MapScreenState extends State<MapScreen>
                     icon: const Icon(Icons.delete_outline, color: Colors.white),
                   ),
                 IconButton(
+                  tooltip: '오프라인 지도',
+                  onPressed: _showOfflineMaps,
+                  icon: const Icon(Icons.offline_pin_outlined,
+                    color: Colors.white),
+                ),
+                IconButton(
                   tooltip: '친구방',
                   onPressed: _showRoomSheet,
                   icon: Icon(Icons.people_alt_outlined,
@@ -414,6 +537,19 @@ class _MapScreenState extends State<MapScreen>
               ]),
             ),
           ),
+          if (_mode != MapMode.onlineNaver)
+            Align(alignment: Alignment.centerLeft,
+              child: widget.mapConfigured && controller.hasNetwork != false
+                  ? ActionChip(
+                      visualDensity: VisualDensity.compact,
+                      label: Text(_mode == MapMode.offlineMapbox
+                          ? '오프라인 지도 · 온라인 재시도'
+                          : '오프라인 · 지도 없음 · 온라인 재시도'),
+                      onPressed: widget.mapMode?.retryNaver,
+                    )
+                  : Chip(visualDensity: VisualDensity.compact,
+                      label: Text(_mode == MapMode.offlineMapbox
+                          ? '오프라인 지도' : '오프라인 · 지도 없음'))),
           if (widget.roomController?.room != null)
             Padding(
               padding: const EdgeInsets.only(top: 6),
@@ -421,7 +557,7 @@ class _MapScreenState extends State<MapScreen>
                 child: Chip(
                   visualDensity: VisualDensity.compact,
                   label: Text('친구방 · ${widget.roomController!.members.length}명 · '
-                    '${widget.roomController!.sharingLocation ? '위치 공유 중' : '위치 공유 대기'}'),
+                  '${widget.roomController!.showingLastSnapshot ? '오프라인 · 마지막 동기화 정보' : widget.roomController!.sharingLocation ? '위치 공유 중' : '위치 공유 대기'}'),
                 )),
             ),
           if (widget.roomController?.error != null)
@@ -520,11 +656,13 @@ class _MapScreenState extends State<MapScreen>
                 const SizedBox(height: 6),
                 Row(children: [
                   Expanded(child: OutlinedButton(
-                    onPressed: () => _shareSelection(ping: true),
+                    onPressed: widget.roomController!.hasNetwork == false
+                        ? null : () => _shareSelection(ping: true),
                     child: const Text('친구들에게 Ping'))),
                   const SizedBox(width: 8),
                   Expanded(child: FilledButton.tonal(
-                    onPressed: () => _shareSelection(ping: false),
+                    onPressed: widget.roomController!.hasNetwork == false
+                        ? null : () => _shareSelection(ping: false),
                     child: const Text('모두의 목적지'))),
                 ]),
               ],
@@ -552,6 +690,16 @@ class _MapScreenState extends State<MapScreen>
           SnackBar(content: Text(RoomController.readableError(e))));
       }
     }
+  }
+
+  void _showOfflineMaps() {
+    final offline = widget.offlineMaps;
+    if (offline == null) return;
+    showModalBottomSheet<void>(context: context, isScrollControlled: true,
+      showDragHandle: true, builder: (context) => FractionallySizedBox(
+        heightFactor: 0.76, child: OfflineMapsSheet(controller: offline,
+          currentPosition: widget.controller.location?.point,
+          online: widget.controller.hasNetwork != false)));
   }
 
   void _showRoomSheet() {
@@ -582,8 +730,9 @@ class _MapScreenState extends State<MapScreen>
             Text(member.point == null ? '위치 정보 없음'
                 : '${CompassPanel.formatDistance(meters)} · '
                   '마지막 업데이트 ${room.currentTime.difference(member.updatedAt).inSeconds}초 전'),
-            if (member.isStale(room.currentTime, RoomController.staleAfter))
-              const Text('위치가 오래되었습니다.',
+            if (room.showingLastSnapshot ||
+                member.isStale(room.currentTime, RoomController.staleAfter))
+              const Text('마지막 위치 기준 · 실시간 위치가 아닙니다.',
                 style: TextStyle(color: Colors.orange)),
             const SizedBox(height: 14),
             FilledButton(onPressed: member.point == null ? null : () {

@@ -14,8 +14,10 @@ import 'package:destination_compass/room/room_controller.dart';
 import 'package:destination_compass/room/room_model.dart';
 import 'package:destination_compass/room/room_repository.dart';
 import 'package:destination_compass/room/shared_ping.dart';
+import 'package:destination_compass/room/room_snapshot_store.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _Clock {
   DateTime now = DateTime.utc(2026, 9, 27, 12);
@@ -149,6 +151,14 @@ class _Store implements ProfileStore {
   Future<String?> loadPendingLeave() async => pending;
   @override
   Future<void> savePendingLeave(String? value) async { pending = value; }
+}
+
+class _SnapshotStore implements RoomSnapshotStore {
+  RoomSnapshot? value;
+  @override
+  Future<RoomSnapshot?> load() async => value;
+  @override
+  Future<void> save(RoomSnapshot? snapshot) async => value = snapshot;
 }
 
 class _Signals extends ChangeNotifier {
@@ -343,5 +353,75 @@ void main() {
     await flush();
     expect(a.room?.id, 'room1');
     a.dispose(); signals.dispose(); backend.dispose();
+  });
+
+  test('offline snapshot restores shared target, stale friend and valid pings', () async {
+    final clock = _Clock();
+    final backend = _Backend(clock)..offline = true;
+    final shared = SharedDestination(point: const GeoPoint(37.54, 127.01),
+      updatedBy: 'a', updatedAt: clock.now, name: '서울숲');
+    final room = Room(id: 'room1', inviteCode: 'ABC234', ownerId: 'a',
+      createdAt: clock.now, sharedDestination: shared);
+    final cache = _SnapshotStore()..value = RoomSnapshot(room: room,
+      members: [RoomMember(userId: 'a', nickname: '철수',
+        point: const GeoPoint(37.55, 127.02), updatedAt: clock.now)],
+      pings: [SharedPing(id: 'p1', point: const GeoPoint(37.55, 127),
+        createdBy: 'a', createdByNickname: '철수', createdAt: clock.now)]);
+    final store = _Store()..roomId = room.id;
+    final signals = _Signals();
+    var connected = false;
+    final controller = RoomController(repository: _Repository(backend, 'b'),
+      profileStore: store, snapshotStore: cache, locationChanges: signals,
+      currentLocation: () => null, hasNetwork: () => connected,
+      now: () => clock.now);
+    final personal = DestinationController(locationProvider: _Location(),
+      headingProvider: _Heading(), networkMonitor: _Network(),
+      store: _DestinationStore());
+    final nav = NavigationTargetController(personal, controller);
+    await controller.start();
+    expect(nav.target?.point, shared.point);
+    expect(nav.target?.modeLabel, contains('마지막으로 동기화'));
+    expect(controller.activePings.single.id, 'p1');
+    nav.followMember('a');
+    expect(nav.target?.point, const GeoPoint(37.55, 127.02));
+    expect(nav.target?.notice, contains('마지막 위치 기준'));
+    await expectLater(controller.sendPing(shared.point), throwsStateError);
+    await expectLater(controller.setSharedDestination(shared.point, '다른 장소'),
+      throwsStateError);
+    clock.advance(const Duration(minutes: 31));
+    expect(controller.activePings, isEmpty);
+    backend.room = room;
+    backend.members['a'] = cache.value!.members.single;
+    backend.offline = false;
+    connected = true;
+    signals.tick();
+    await flush();
+    expect(controller.error, isNull);
+    expect(nav.target?.notice, contains('오래되었습니다'));
+    await controller.leave();
+    expect(cache.value, isNull);
+    nav.dispose(); personal.dispose(); controller.dispose();
+    signals.dispose(); backend.dispose();
+  });
+
+  test('room snapshot preference cache round-trips shared coordinates', () async {
+    SharedPreferences.setMockInitialValues({});
+    final cache = PreferencesRoomSnapshotStore();
+    final now = DateTime.utc(2026, 9, 28);
+    await cache.save(RoomSnapshot(
+      room: Room(id: 'r1', inviteCode: 'ABC234', ownerId: 'a',
+        createdAt: now, sharedDestination: SharedDestination(
+          point: const GeoPoint(37.52, 127.1), name: '서울숲',
+          updatedBy: 'a', updatedAt: now)),
+      members: [RoomMember(userId: 'a', nickname: '철수',
+        point: const GeoPoint(37.5, 127.2), updatedAt: now)],
+      pings: [SharedPing(id: 'p1', point: const GeoPoint(37.6, 127.1),
+        createdBy: 'a', createdByNickname: '철수', createdAt: now)]));
+    final loaded = await cache.load();
+    expect(loaded?.room.sharedDestination?.point, const GeoPoint(37.52, 127.1));
+    expect(loaded?.members.single.point, const GeoPoint(37.5, 127.2));
+    expect(loaded?.pings.single.id, 'p1');
+    await cache.save(null);
+    expect(await cache.load(), isNull);
   });
 }

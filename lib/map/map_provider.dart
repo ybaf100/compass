@@ -27,6 +27,21 @@ class MapPingOverlay {
   final String label;
 }
 
+class MapCameraState {
+  const MapCameraState(this.center, {this.zoom = 14, this.bearing = 0,
+    this.pitch = 0});
+  final GeoPoint center;
+  final double zoom;
+  final double bearing;
+  final double pitch;
+}
+
+/// Optional camera handoff supported by both native map engines.
+abstract interface class CameraAwareMapProvider {
+  MapCameraState? get cameraState;
+  Future<void> restoreCamera(MapCameraState state);
+}
+
 /// UI and destination math depend on this contract, never on a map SDK type.
 abstract class MapProvider {
   Widget buildMap({

@@ -7,7 +7,7 @@ import '../destination/destination_model.dart';
 import 'map_provider.dart';
 
 /// The only app module aware of flutter_naver_map native overlay APIs.
-class NaverMapProvider implements MapProvider {
+class NaverMapProvider implements MapProvider, CameraAwareMapProvider {
   NaverMapController? _controller;
   NMarker? _destinationMarker;
   NMarker? _candidateMarker;
@@ -20,8 +20,12 @@ class NaverMapProvider implements MapProvider {
   GeoPoint? _candidate;
   LocationFix? _location;
   GeoPoint? _lastCameraPoint;
+  MapCameraState? _savedCamera;
+  @override
+  MapCameraState? get cameraState => _savedCamera;
   double _pinReveal = 1.0;
   bool _disposed = false;
+  int _generation = 0;
   Future<void> _operations = Future<void>.value();
 
   static const _defaultCenter = NLatLng(37.5666, 126.979);
@@ -34,26 +38,32 @@ class NaverMapProvider implements MapProvider {
     required VoidCallback onLoaded,
     required VoidCallback onGesture,
     void Function(String memberId)? onMemberTapped,
-  }) => NaverMap(
+  }) {
+    final generation = _generation;
+    return NaverMap(
     options: NaverMapViewOptions(
-      initialCameraPosition: const NCameraPosition(
-        target: _defaultCenter,
-        zoom: 14,
-      ),
+      initialCameraPosition: _savedCamera == null ? const NCameraPosition(
+        target: _defaultCenter, zoom: 14,
+      ) : NCameraPosition(target: _latLng(_savedCamera!.center),
+        zoom: _savedCamera!.zoom, bearing: _savedCamera!.bearing,
+        tilt: _savedCamera!.pitch),
       contentPadding: EdgeInsets.only(bottom: bottomPadding),
       scaleBarEnable: true,
       locationButtonEnable: false,
     ),
     onMapReady: (controller) {
+      if (_disposed || generation != _generation) return;
       _controller = controller;
       _destinationMarker = null;
       _candidateMarker = null;
       _memberMarkers.clear();
       _pingMarkers.clear();
       _onMemberTapped = onMemberTapped;
-      _lastCameraPoint = null;
+      _lastCameraPoint = _savedCamera?.center;
       _queue(_reconcile).catchError((Object _) {});
-      if (_location != null) {
+      if (_savedCamera != null) {
+        _queue(() => restoreCamera(_savedCamera!)).catchError((Object _) {});
+      } else if (_location != null) {
         _queue(() => moveCamera(_location!.point, zoom: 16))
             .catchError((Object _) {});
       } else if (_destination != null) {
@@ -61,28 +71,56 @@ class NaverMapProvider implements MapProvider {
             .catchError((Object _) {});
       }
     },
-    onMapLoaded: onLoaded,
-    onMapTapped: (_, point) => onPicked(
-      GeoPoint(point.latitude, point.longitude),
-    ),
-    onMapLongTapped: (_, point) => onPicked(
-      GeoPoint(point.latitude, point.longitude),
-    ),
-    onSymbolTapped: (symbol) => onNamedPlacePicked(
-      GeoPoint(symbol.position.latitude, symbol.position.longitude),
-      symbol.caption,
-    ),
+    onMapLoaded: () {
+      if (!_disposed && generation == _generation) onLoaded();
+    },
+    onMapTapped: (_, point) {
+      if (!_disposed && generation == _generation) {
+        onPicked(GeoPoint(point.latitude, point.longitude));
+      }
+    },
+    onMapLongTapped: (_, point) {
+      if (!_disposed && generation == _generation) {
+        onPicked(GeoPoint(point.latitude, point.longitude));
+      }
+    },
+    onSymbolTapped: (symbol) {
+      if (!_disposed && generation == _generation) {
+        onNamedPlacePicked(GeoPoint(symbol.position.latitude,
+          symbol.position.longitude), symbol.caption);
+      }
+    },
     onCameraChange: (reason, _) {
+      if (_disposed || generation != _generation) return;
       if (reason == NCameraUpdateReason.gesture ||
           reason == NCameraUpdateReason.control) {
         onGesture();
       }
     },
+    onCameraIdle: () async {
+      if (_disposed || generation != _generation) return;
+      final controller = _controller;
+      if (controller == null || _disposed) return;
+      try {
+        final position = await controller.getCameraPosition();
+        if (controller != _controller || _disposed ||
+            generation != _generation) {
+          return;
+        }
+        _savedCamera = MapCameraState(GeoPoint(position.target.latitude,
+            position.target.longitude), zoom: position.zoom,
+            bearing: position.bearing, pitch: position.tilt);
+      } catch (_) {
+        // Native map may have been detached during provider switching.
+      }
+    },
   );
+  }
 
   Future<void> _queue(Future<void> Function() action) {
+    final generation = _generation;
     final next = _operations.then((_) async {
-      if (!_disposed) await action();
+      if (!_disposed && generation == _generation) await action();
     });
     _operations = next.catchError((Object _) {});
     return next;
@@ -200,6 +238,20 @@ class NaverMapProvider implements MapProvider {
     update.setAnimation(duration: const Duration(milliseconds: 420));
     await controller.updateCamera(update);
     _lastCameraPoint = point;
+    final current = _savedCamera;
+    _savedCamera = MapCameraState(point, zoom: zoom ?? current?.zoom ?? 14,
+      bearing: current?.bearing ?? 0, pitch: current?.pitch ?? 0);
+  }
+
+  @override
+  Future<void> restoreCamera(MapCameraState state) async {
+    _savedCamera = state;
+    _lastCameraPoint = state.center;
+    final controller = _controller;
+    if (controller == null || _disposed) return;
+    await controller.updateCamera(NCameraUpdate.fromCameraPosition(
+      NCameraPosition(target: _latLng(state.center), zoom: state.zoom,
+        bearing: state.bearing, tilt: state.pitch)));
   }
 
   @override
@@ -271,13 +323,14 @@ class NaverMapProvider implements MapProvider {
 
   @override
   void reset() {
+    _generation++;
     _controller = null;
     _destinationMarker = null;
     _candidateMarker = null;
     _memberMarkers.clear();
     _pingMarkers.clear();
     _onMemberTapped = null;
-    _lastCameraPoint = null;
+    _lastCameraPoint = _savedCamera?.center;
   }
 
   @override
