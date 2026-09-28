@@ -44,7 +44,7 @@ if settings.exists():
     contents = settings.read_text()
     contents, count = re.subn(
         r'id\("com\.android\.application"\) version "[^"]+" apply false',
-        'id("com.android.application") version "8.10.1" apply false', contents)
+        'id("com.android.application") version "8.11.1" apply false', contents)
     if count != 1:
         raise RuntimeError('Flutter AGP version anchor not found')
     contents, count = re.subn(
