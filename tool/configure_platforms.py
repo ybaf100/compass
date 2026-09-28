@@ -36,6 +36,19 @@ for path in (root / 'android/app/build.gradle.kts',
     gradle = gradle.replace('compileSdkVersion flutter.compileSdkVersion', 'compileSdkVersion 36')
     path.write_text(gradle)
 
+# Mapbox 2.31 uses AGP 9's built-in Kotlin rather than applying KGP. Flutter's
+# template currently disables it for legacy plugins; opt in for this app so
+# the Mapbox Android module receives the `kotlin {}` extension it configures.
+gradle_properties = root / 'android/gradle.properties'
+if gradle_properties.exists():
+    properties = gradle_properties.read_text()
+    properties = re.sub(r'^android\.builtInKotlin=.*$',
+                        'android.builtInKotlin=true', properties,
+                        flags=re.MULTILINE)
+    if 'android.builtInKotlin=' not in properties:
+        properties += '\nandroid.builtInKotlin=true\n'
+    gradle_properties.write_text(properties)
+
 info = root / 'ios/Runner/Info.plist'
 with info.open('rb') as file:
     data = plistlib.load(file)

@@ -14,6 +14,7 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
   mb.MapboxMap? _map;
   mb.CircleAnnotationManager? _circles;
   mb.PointAnnotationManager? _labels;
+  mb.Cancelable? _memberTap;
   final Map<String, mb.CircleAnnotation> _pins = {};
   final Map<String, mb.PointAnnotation> _text = {};
   final Map<String, String> _memberPinIds = {};
@@ -117,7 +118,7 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
     if (_disposed || generation != _generation) return;
     _circles = circles;
     _labels = labels;
-    circles.tapEvents(onTap: (annotation) {
+    _memberTap = circles.tapEvents(onTap: (annotation) {
       final id = _memberPinIds[annotation.id];
       if (id != null) _onMemberTapped?.call(id);
     });
@@ -276,6 +277,8 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
   @override
   void reset() {
     _generation++;
+    _memberTap?.cancel();
+    _memberTap = null;
     _map = null;
     _circles = null;
     _labels = null;
