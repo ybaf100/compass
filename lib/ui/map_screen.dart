@@ -235,8 +235,9 @@ class _MapScreenState extends State<MapScreen>
   }
 
   void _runMap(Future<void> operation) {
+    final providerAtStart = _activeMap;
     unawaited(operation.catchError((Object error) {
-      if (mounted) {
+      if (mounted && providerAtStart == _activeMap) {
         setState(() => _mapOperationError = '지도를 조작할 수 없습니다. 다시 시도하세요.');
         if (_mode == MapMode.onlineNaver) widget.mapMode?.naverFailure();
       }
