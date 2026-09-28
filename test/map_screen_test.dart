@@ -207,11 +207,20 @@ void main() {
     expect(offline.destination?.point, saved.point);
     expect(offline.candidate, const GeoPoint(37.54, 127.12));
     expect(find.byType(CompassPanel), findsOneWidget);
+    offline.state = const MapCameraState(GeoPoint(37.51, 127.09),
+      zoom: 10, bearing: 18);
+    mode.update(position: const GeoPoint(38.0, 128.0));
+    await tester.pump(const Duration(milliseconds: 5));
+    await tester.pump();
+    expect(mode.mode, MapMode.mapUnavailable);
+    expect(find.text('오프라인 · 이 지역의 지도가 없습니다.'), findsOneWidget);
+    expect(find.byType(CompassPanel), findsOneWidget);
     mode.update(connected: true);
     await tester.pump(const Duration(milliseconds: 5));
     await tester.pump();
     expect(mode.mode, MapMode.onlineNaver);
-    expect(online.state?.zoom, 12);
+    expect(online.state?.zoom, 10);
+    expect(online.state?.center, const GeoPoint(37.51, 127.09));
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose(); mode.dispose(); maps.dispose(); error.dispose();
   });

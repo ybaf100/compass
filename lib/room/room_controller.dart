@@ -69,6 +69,8 @@ class RoomController extends ChangeNotifier {
 
   bool get configured => _repository != null;
   bool? get hasNetwork => _hasNetwork();
+  bool get showingLastSnapshot => room != null &&
+      (_hasNetwork() == false || error != null);
   bool get sharingLocation => room != null && foreground &&
       _hasNetwork() != false &&
       _lastSuccessfulUploadAt != null &&

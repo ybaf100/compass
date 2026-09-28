@@ -74,6 +74,7 @@ class _MapScreenState extends State<MapScreen>
     MapMode.mapUnavailable => null,
   };
   MapProvider? _previousMap;
+  MapCameraState? _handoffCamera;
 
   Timer? _mapTimeout;
   int _mapGeneration = 0;
@@ -164,7 +165,7 @@ class _MapScreenState extends State<MapScreen>
         if (member.userId != state.userId && member.point != null)
           MapMemberOverlay(id: member.userId, name: member.nickname,
             point: member.point!, updatedAt: member.updatedAt,
-            isStale: state.hasNetwork == false ||
+            isStale: state.showingLastSnapshot ||
                 member.isStale(state.currentTime, RoomController.staleAfter)),
     ]);
     final map = _activeMap;
@@ -188,10 +189,11 @@ class _MapScreenState extends State<MapScreen>
     if (old == next) return;
     final camera = old is CameraAwareMapProvider
         ? (old as CameraAwareMapProvider).cameraState : null;
+    if (camera != null) _handoffCamera = camera;
     old?.reset();
     _previousMap = next;
-    if (camera != null && next is CameraAwareMapProvider) {
-      _runMap((next as CameraAwareMapProvider).restoreCamera(camera));
+    if (_handoffCamera != null && next is CameraAwareMapProvider) {
+      _runMap((next as CameraAwareMapProvider).restoreCamera(_handoffCamera!));
     }
     _mapTimeout?.cancel();
     _mapLoaded = false;
@@ -199,6 +201,9 @@ class _MapScreenState extends State<MapScreen>
     _mapOperationError = null;
     _mapGeneration++;
     if (next != null) _armMapTimeout();
+    if (_mode == MapMode.onlineNaver && widget.mapError.value != null) {
+      widget.mapMode?.naverFailure();
+    }
     _syncMapOverlays();
     if (mounted) setState(() {});
   }
@@ -218,7 +223,7 @@ class _MapScreenState extends State<MapScreen>
         if (member.userId != room.userId && member.point != null)
           MapMemberOverlay(id: member.userId, name: member.nickname,
             point: member.point!, updatedAt: member.updatedAt,
-            isStale: room.hasNetwork == false || member.isStale(
+            isStale: room.showingLastSnapshot || member.isStale(
               room.currentTime, RoomController.staleAfter)),
       ]));
       _runMap(map.setSharedPings([for (final ping in room.activePings)
@@ -540,7 +545,7 @@ class _MapScreenState extends State<MapScreen>
                 child: Chip(
                   visualDensity: VisualDensity.compact,
                   label: Text('친구방 · ${widget.roomController!.members.length}명 · '
-                  '${widget.roomController!.hasNetwork == false ? '오프라인 · 마지막 동기화 정보' : widget.roomController!.sharingLocation ? '위치 공유 중' : '위치 공유 대기'}'),
+                  '${widget.roomController!.showingLastSnapshot ? '오프라인 · 마지막 동기화 정보' : widget.roomController!.sharingLocation ? '위치 공유 중' : '위치 공유 대기'}'),
                 )),
             ),
           if (widget.roomController?.error != null)
@@ -713,7 +718,7 @@ class _MapScreenState extends State<MapScreen>
             Text(member.point == null ? '위치 정보 없음'
                 : '${CompassPanel.formatDistance(meters)} · '
                   '마지막 업데이트 ${room.currentTime.difference(member.updatedAt).inSeconds}초 전'),
-            if (room.hasNetwork == false ||
+            if (room.showingLastSnapshot ||
                 member.isStale(room.currentTime, RoomController.staleAfter))
               const Text('마지막 위치 기준 · 실시간 위치가 아닙니다.',
                 style: TextStyle(color: Colors.orange)),

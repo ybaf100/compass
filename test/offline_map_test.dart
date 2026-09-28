@@ -132,4 +132,19 @@ void main() {
     expect(mode.mode, MapMode.onlineNaver);
     mode.dispose(); downloads.dispose();
   });
+
+  test('short connectivity flaps do not switch the active provider', () async {
+    final downloads = OfflineMapController(repository: _Store(),
+      backend: _Backend());
+    await downloads.start();
+    await downloads.download(downloads.draft(center, 5));
+    final mode = MapModeController(naverConfigured: true,
+      offlineMaps: downloads, switchDelay: const Duration(milliseconds: 40),
+      recoveryDelay: const Duration(milliseconds: 40));
+    mode.update(connected: false, position: center);
+    mode.update(connected: true);
+    await Future<void>.delayed(const Duration(milliseconds: 55));
+    expect(mode.mode, MapMode.onlineNaver);
+    mode.dispose(); downloads.dispose();
+  });
 }
