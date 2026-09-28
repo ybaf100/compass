@@ -24,6 +24,7 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
   List<MapMemberOverlay> _members = const [];
   List<MapPingOverlay> _pings = const [];
   MapCameraState? _savedCamera;
+  double _bottomPadding = 0;
   double _pinReveal = 1;
   bool _disposed = false;
   int _generation = 0;
@@ -42,31 +43,50 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
       required VoidCallback onLoaded, required VoidCallback onGesture,
       void Function(String memberId)? onMemberTapped}) {
     _onMemberTapped = onMemberTapped;
+    if (_bottomPadding != bottomPadding) {
+      _bottomPadding = bottomPadding;
+      final current = _map;
+      if (current != null) unawaited(_configureOrnaments(current));
+    }
     final initial = _savedCamera ?? MapCameraState(
         _location?.point ?? _destination?.point ??
             const GeoPoint(37.5666, 126.979));
+    final generation = _generation;
     return mb.MapWidget(
       styleUri: MapboxTileBackend.styleUri,
       // ignore: deprecated_member_use
       cameraOptions: mb.CameraOptions(center: _point(initial.center),
-        zoom: initial.zoom, bearing: initial.bearing, pitch: initial.pitch),
+        zoom: initial.zoom, bearing: initial.bearing, pitch: initial.pitch,
+        padding: _padding),
       onMapCreated: (map) {
+        if (_disposed || generation != _generation) return;
         _map = map;
-        final generation = _generation;
+        unawaited(_configureOrnaments(map));
         unawaited(_initialize(map, generation));
       },
-      onMapLoadedListener: (_) => onLoaded(),
+      onMapLoadedListener: (_) {
+        if (!_disposed && generation == _generation) onLoaded();
+      },
       // ignore: deprecated_member_use
-      onTapListener: (context) => onPicked(GeoPoint(
-        context.point.coordinates.lat.toDouble(),
-        context.point.coordinates.lng.toDouble())),
+      onTapListener: (context) {
+        if (_disposed || generation != _generation) return;
+        onPicked(GeoPoint(context.point.coordinates.lat.toDouble(),
+          context.point.coordinates.lng.toDouble()));
+      },
       // ignore: deprecated_member_use
-      onLongTapListener: (context) => onPicked(GeoPoint(
-        context.point.coordinates.lat.toDouble(),
-        context.point.coordinates.lng.toDouble())),
-      onScrollListener: (_) => onGesture(),
-      onZoomListener: (_) => onGesture(),
+      onLongTapListener: (context) {
+        if (_disposed || generation != _generation) return;
+        onPicked(GeoPoint(context.point.coordinates.lat.toDouble(),
+          context.point.coordinates.lng.toDouble()));
+      },
+      onScrollListener: (_) {
+        if (!_disposed && generation == _generation) onGesture();
+      },
+      onZoomListener: (_) {
+        if (!_disposed && generation == _generation) onGesture();
+      },
       onCameraChangeListener: (event) {
+        if (_disposed || generation != _generation) return;
         final state = event.cameraState;
         _savedCamera = MapCameraState(GeoPoint(
             state.center.coordinates.lat.toDouble(),
@@ -74,6 +94,21 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
           zoom: state.zoom, bearing: state.bearing, pitch: state.pitch);
       },
     );
+  }
+
+  mb.MbxEdgeInsets get _padding => mb.MbxEdgeInsets(top: 0, left: 0,
+    bottom: _bottomPadding, right: 0);
+
+  Future<void> _configureOrnaments(mb.MapboxMap map) async {
+    try {
+      await Future.wait([
+        map.logo.updateSettings(mb.LogoSettings(marginBottom: _bottomPadding)),
+        map.attribution.updateSettings(
+          mb.AttributionSettings(marginBottom: _bottomPadding)),
+      ]);
+    } catch (_) {
+      // The MapWidget may be detached while switching providers.
+    }
   }
 
   Future<void> _initialize(mb.MapboxMap map, int generation) async {
@@ -179,7 +214,8 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
   Future<void> restoreCamera(MapCameraState state) async {
     _savedCamera = state;
     await _map?.setCamera(mb.CameraOptions(center: _point(state.center),
-      zoom: state.zoom, bearing: state.bearing, pitch: state.pitch));
+      zoom: state.zoom, bearing: state.bearing, pitch: state.pitch,
+      padding: _padding));
   }
 
   @override

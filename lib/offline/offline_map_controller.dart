@@ -40,7 +40,11 @@ class OfflineMapController extends ChangeNotifier {
 
   Future<void> start() async {
     try {
-      regions = await _repository.load();
+      regions = [for (final region in await _repository.load())
+        if (region.status == OfflineRegionStatus.downloading)
+          region.copyWith(status: OfflineRegionStatus.failed,
+            failure: '이전 다운로드가 중단되었습니다. 다시 시도하세요.')
+        else region];
       if (_backend != null) {
         // Metadata can outlive native tiles (e.g. an OS storage cleanup).
         final verified = <OfflineRegion>[];
