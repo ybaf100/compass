@@ -76,7 +76,9 @@ class _OfflineMapsSheetState extends State<OfflineMapsSheet> {
             children: [
               Text('오프라인 지도', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 8),
-              Text('오프라인 지도 사용량 · ${size(maps.usageBytes)}'),
+              Text('다운로드 지역 데이터 합계 · ${size(maps.usageBytes)}'),
+              const Text('공유 타일·Style Pack 때문에 기기 저장 공간 점유량과 다를 수 있습니다.',
+                style: TextStyle(fontSize: 12)),
               if (!maps.configured) const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
                 child: Text('Mapbox 토큰이 없어 다운로드 기능이 비활성화되었습니다. '
