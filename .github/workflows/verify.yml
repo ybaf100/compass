@@ -18,6 +18,10 @@ jobs:
           channel: stable
           cache: true
       - run: bash tool/bootstrap.sh
+      - name: Verify repeat bootstrap and permanent app ID
+        run: |
+          bash tool/bootstrap.sh
+          python3 tool/verify_app_identity.py
       - run: flutter analyze
       - run: flutter test
       - name: Build Android debug APK
@@ -49,6 +53,7 @@ jobs:
           channel: stable
           cache: true
       - run: bash tool/bootstrap.sh
+      - run: python3 tool/verify_app_identity.py
       - name: Build iOS simulator app
         env:
           NAVER_MAP_CLIENT_ID: ${{ vars.NAVER_MAP_CLIENT_ID }}
@@ -80,6 +85,7 @@ jobs:
           channel: stable
           cache: true
       - run: bash tool/bootstrap.sh
+      - run: python3 tool/verify_app_identity.py
       - name: Build unsigned iOS device app
         env:
           NAVER_MAP_CLIENT_ID: ${{ vars.NAVER_MAP_CLIENT_ID }}
@@ -99,6 +105,7 @@ jobs:
           app=build/ios/ipa/Payload/Runner.app
           /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Compass' "$app/Info.plist"
           /usr/libexec/PlistBuddy -c 'Set :CFBundleName Compass' "$app/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")" = com.ybaf100.compass
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleSupportedPlatforms:0' "$app/Info.plist")" = iPhoneOS
           lipo -archs "$app/Runner" | grep -qw arm64
           (cd build/ios/ipa && ditto -c -k --sequesterRsrc --keepParent Payload compass-ios-sideload-unsigned.ipa)

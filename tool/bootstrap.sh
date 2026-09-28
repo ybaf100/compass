@@ -8,12 +8,17 @@ if ! command -v flutter >/dev/null 2>&1; then
   exit 1
 fi
 
-flutter create --platforms=android,ios --org com.example \
+flutter create --platforms=android,ios --org com.ybaf100 \
   --project-name destination_compass --no-pub .
-mkdir -p android/app/src/main/kotlin/com/example/destination_compass
+mkdir -p android/app/src/main/kotlin/com/ybaf100/compass
 cp platform_overrides/android/MainActivity.kt \
-  android/app/src/main/kotlin/com/example/destination_compass/MainActivity.kt
+  android/app/src/main/kotlin/com/ybaf100/compass/MainActivity.kt
+# Flutter's generated class uses the project name; only the permanent package
+# path may contain an Activity after regeneration (including older checkouts).
+rm -f android/app/src/main/kotlin/com/ybaf100/destination_compass/MainActivity.kt
+rm -f android/app/src/main/kotlin/com/example/destination_compass/MainActivity.kt
 cp platform_overrides/ios/AppDelegate.swift ios/Runner/AppDelegate.swift
 python3 tool/configure_platforms.py
+python3 tool/verify_app_identity.py
 flutter pub get
 echo '플랫폼 설정 완료. README의 Client ID 안내를 확인하세요.'

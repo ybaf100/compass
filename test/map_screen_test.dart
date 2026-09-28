@@ -1,5 +1,6 @@
 import 'package:destination_compass/core/compass/heading_provider.dart';
 import 'package:destination_compass/core/geo_point.dart';
+import 'package:destination_compass/core/config/service_configuration.dart';
 import 'package:destination_compass/core/location/location_provider.dart';
 import 'package:destination_compass/core/network/network_monitor.dart';
 import 'package:destination_compass/destination/destination_controller.dart';
@@ -122,6 +123,32 @@ class _Tiles implements OfflineTileBackend {
 }
 
 void main() {
+  testWidgets('compact header opens service status without overflow',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(320, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final controller = DestinationController(locationProvider: _Location(),
+      headingProvider: _Heading(), networkMonitor: _Network(), store: _Store());
+    final error = ValueNotifier<String?>(null);
+    await tester.pumpWidget(MaterialApp(home: MapScreen(
+      controller: controller, mapProvider: _Map(),
+      mapConfigured: false, mapError: error,
+      configuration: const ServiceConfiguration(naverClientId: '',
+        supabaseUrl: '', supabasePublishableKey: '',
+        mapboxAccessToken: ''))));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byTooltip('설정 및 오프라인 지도'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('서비스 상태'));
+    await tester.pumpAndSettle();
+    expect(find.text('Android package'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+    error.dispose();
+  });
+
   testWidgets('swipe expands and collapses the compass continuously', (tester) async {
     final controller = DestinationController(
       locationProvider: _Location(), headingProvider: _Heading(),

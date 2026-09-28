@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'core/compass/native_heading_provider.dart';
+import 'core/config/service_configuration.dart';
 import 'core/location/geolocator_location_provider.dart';
 import 'core/network/network_monitor.dart';
 import 'destination/destination_controller.dart';
@@ -27,12 +28,14 @@ class DestinationCompassApp extends StatefulWidget {
     required this.mapError,
     required this.roomRepository,
     required this.mapboxConfigured,
+    required this.configuration,
   });
 
   final bool mapConfigured;
   final ValueNotifier<String?> mapError;
   final RoomRepository? roomRepository;
   final bool mapboxConfigured;
+  final ServiceConfiguration configuration;
 
   @override
   State<DestinationCompassApp> createState() => _DestinationCompassAppState();
@@ -109,6 +112,9 @@ class _DestinationCompassAppState extends State<DestinationCompassApp> {
       offlineMapProvider: _offlineProvider,
       offlineMaps: _offlineMaps,
       mapMode: _mapMode,
+      configuration: widget.configuration,
+      supabaseInitialized: widget.roomRepository != null,
+      mapboxInitialized: widget.mapboxConfigured,
     ),
   );
 }

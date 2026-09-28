@@ -6,6 +6,7 @@ import re
 import xml.etree.ElementTree as ET
 
 root = Path(__file__).resolve().parents[1]
+app_id = 'com.ybaf100.compass'
 manifest = root / 'android/app/src/main/AndroidManifest.xml'
 android_ns = 'http://schemas.android.com/apk/res/android'
 ET.register_namespace('android', android_ns)
@@ -30,6 +31,12 @@ for path in (root / 'android/app/build.gradle.kts',
     if not path.exists():
         continue
     gradle = path.read_text()
+    for key in ('namespace', 'applicationId'):
+        pattern = rf'(?m)^(\s*{key}\s*(?:=\s*)?)["\'][^"\']+["\']'
+        gradle, count = re.subn(pattern, lambda m: f'{m.group(1)}"{app_id}"',
+                                 gradle)
+        if count != 1:
+            raise RuntimeError(f'Android {key} anchor not found in {path}')
     gradle = gradle.replace('minSdk = flutter.minSdkVersion', 'minSdk = 24')
     gradle = gradle.replace('minSdkVersion flutter.minSdkVersion', 'minSdkVersion 24')
     gradle = gradle.replace('compileSdk = flutter.compileSdkVersion', 'compileSdk = 36')
@@ -122,6 +129,13 @@ if podfile.exists():
 project = root / 'ios/Runner.xcodeproj/project.pbxproj'
 if project.exists():
     text = project.read_text()
+    def bundle_id(match: re.Match[str]) -> str:
+        suffix = '.RunnerTests' if match.group(1).endswith('.RunnerTests') else ''
+        return f'PRODUCT_BUNDLE_IDENTIFIER = {app_id}{suffix};'
+
+    text, count = re.subn(r'PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);', bundle_id, text)
+    if count < 3:
+        raise RuntimeError('iOS Runner bundle identifier anchors not found')
     text = re.sub(r'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]+;',
                   'IPHONEOS_DEPLOYMENT_TARGET = 15.0;', text)
     project.write_text(text)

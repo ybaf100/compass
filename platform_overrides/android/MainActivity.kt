@@ -1,4 +1,4 @@
-package com.example.destination_compass
+package com.ybaf100.compass
 
 import android.content.Context
 import android.hardware.GeomagneticField
