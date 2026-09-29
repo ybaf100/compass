@@ -164,7 +164,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
         anchorPoint: CGPoint(x: 0.5, y: 0.5))
       let text = TextStyle(fontSize: 15, fontColor: .white,
         strokeThickness: 2, strokeColor: .black)
-      let line = PoiTextLineStyle(textStyle: text, textLayout: .bottom)
+      let line = PoiTextLineStyle(textStyle: text)
       let style = PerLevelPoiStyle(iconStyle: icon,
         textStyle: PoiTextStyle(textLineStyles: [line]), level: 0)
       manager.addPoiStyle(PoiStyle(styleID: "compass-\(kind)", styles: [style]))
