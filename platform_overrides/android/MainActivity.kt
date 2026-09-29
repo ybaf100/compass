@@ -14,6 +14,7 @@ import io.flutter.plugin.common.MethodChannel
 import kotlin.math.PI
 
 class MainActivity : FlutterActivity(), SensorEventListener {
+    private var kakaoFactory: KakaoMapViewFactory? = null
     private var sensorManager: SensorManager? = null
     private var headingSensor: Sensor? = null
     private var eventSink: EventChannel.EventSink? = null
@@ -21,6 +22,9 @@ class MainActivity : FlutterActivity(), SensorEventListener {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        kakaoFactory = KakaoMapViewFactory(this, flutterEngine.dartExecutor.binaryMessenger)
+        flutterEngine.platformViewsController.registry.registerViewFactory(
+            "app.destination_compass/kakao_map", kakaoFactory!!)
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         EventChannel(flutterEngine.dartExecutor.binaryMessenger,
             "app.destination_compass/heading").setStreamHandler(object : EventChannel.StreamHandler {
@@ -74,16 +78,20 @@ class MainActivity : FlutterActivity(), SensorEventListener {
     }
 
     override fun onPause() {
+        kakaoFactory?.pause()
         stopHeading()
         super.onPause()
     }
 
     override fun onResume() {
         super.onResume()
+        kakaoFactory?.resume()
         if (eventSink != null) startHeading()
     }
 
     override fun onDestroy() {
+        kakaoFactory?.dispose()
+        kakaoFactory = null
         stopHeading()
         eventSink = null
         super.onDestroy()

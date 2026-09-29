@@ -5,60 +5,60 @@ import 'package:flutter/foundation.dart';
 import '../core/geo_point.dart';
 import '../offline/offline_map_controller.dart';
 
-enum MapMode { onlineNaver, offlineMapbox, mapUnavailable }
+enum MapMode { onlineKakao, offlineMapbox, mapUnavailable }
 
-/// Connectivity is only a hint; Naver load/auth/timeout failures also count.
+/// Connectivity is only a hint; Kakao load/auth/timeout failures also count.
 class MapModeController extends ChangeNotifier {
-  MapModeController({required this.naverConfigured,
+  MapModeController({required this.kakaoConfigured,
     required OfflineMapController offlineMaps,
     Duration switchDelay = const Duration(milliseconds: 1300),
     Duration recoveryDelay = const Duration(seconds: 3)})
       : _offlineMaps = offlineMaps, _switchDelay = switchDelay,
         _recoveryDelay = recoveryDelay {
     _offlineMaps.addListener(_reevaluate);
-    mode = naverConfigured ? MapMode.onlineNaver : MapMode.mapUnavailable;
+    mode = kakaoConfigured ? MapMode.onlineKakao : MapMode.mapUnavailable;
   }
 
-  final bool naverConfigured;
+  final bool kakaoConfigured;
   final OfflineMapController _offlineMaps;
   final Duration _switchDelay;
   final Duration _recoveryDelay;
   late MapMode mode;
   bool? connected;
   GeoPoint? currentPosition;
-  bool naverFailed = false;
+  bool kakaoFailed = false;
   Timer? _pending;
   MapMode? _pendingTarget;
   bool _disposed = false;
 
   void update({bool? connected, GeoPoint? position}) {
     if (connected != null && connected != this.connected) {
-      if (this.connected == false && connected) naverFailed = false;
+      if (this.connected == false && connected) kakaoFailed = false;
       this.connected = connected;
     }
     if (position != null) currentPosition = position;
     _reevaluate();
   }
 
-  void naverLoaded() {
-    naverFailed = false;
+  void kakaoLoaded() {
+    kakaoFailed = false;
     _reevaluate();
   }
 
-  void naverFailure() {
-    if (naverFailed) return;
-    naverFailed = true;
+  void kakaoFailure() {
+    if (kakaoFailed) return;
+    kakaoFailed = true;
     _reevaluate();
   }
 
-  void retryNaver() {
-    naverFailed = false;
+  void retryKakao() {
+    kakaoFailed = false;
     _reevaluate();
   }
 
   MapMode get desired {
-    if (naverConfigured && connected != false && !naverFailed) {
-      return MapMode.onlineNaver;
+    if (kakaoConfigured && connected != false && !kakaoFailed) {
+      return MapMode.onlineKakao;
     }
     if (_offlineMaps.configured &&
         _offlineMaps.covering(currentPosition) != null) {
@@ -79,7 +79,7 @@ class MapModeController extends ChangeNotifier {
     if (_pending?.isActive == true && _pendingTarget == next) return;
     _pending?.cancel();
     _pendingTarget = next;
-    _pending = Timer(next == MapMode.onlineNaver
+    _pending = Timer(next == MapMode.onlineKakao
         ? _recoveryDelay : _switchDelay, () {
       if (_disposed) return;
       if (next != desired) {

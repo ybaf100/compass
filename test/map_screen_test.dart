@@ -133,7 +133,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: MapScreen(
       controller: controller, mapProvider: _Map(),
       mapConfigured: false, mapError: error,
-      configuration: const ServiceConfiguration(naverClientId: '',
+      configuration: const ServiceConfiguration(kakaoNativeAppKey: '',
         supabaseUrl: '', supabasePublishableKey: '',
         mapboxAccessToken: ''))));
     await tester.pump();
@@ -212,7 +212,7 @@ void main() {
     final maps = OfflineMapController(repository: _Regions(), backend: _Tiles());
     await maps.start();
     await maps.download(maps.draft(center, 5));
-    final mode = MapModeController(naverConfigured: true, offlineMaps: maps,
+    final mode = MapModeController(kakaoConfigured: true, offlineMaps: maps,
       switchDelay: const Duration(milliseconds: 1),
       recoveryDelay: const Duration(milliseconds: 1));
     final error = ValueNotifier<String?>(null);
@@ -245,7 +245,7 @@ void main() {
     mode.update(connected: true);
     await tester.pump(const Duration(milliseconds: 5));
     await tester.pump();
-    expect(mode.mode, MapMode.onlineNaver);
+    expect(mode.mode, MapMode.onlineKakao);
     expect(online.state?.zoom, 10);
     expect(online.state?.center, const GeoPoint(37.51, 127.09));
     await tester.pumpWidget(const SizedBox.shrink());

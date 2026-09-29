@@ -4,15 +4,16 @@ import '../core/config/service_configuration.dart';
 
 /// Never accepts or renders raw IDs, keys, tokens, or URLs.
 class ServiceStatusSheet extends StatelessWidget {
-  const ServiceStatusSheet({super.key, required this.naver,
+  const ServiceStatusSheet({super.key, required this.kakao,
     required this.supabase, required this.mapbox,
-    this.naverError, this.supabaseInitialized = true,
+    this.kakaoError, this.kakaoLoaded = false, this.supabaseInitialized = true,
     this.mapboxInitialized = true});
 
-  final ConfigurationStatus naver;
+  final ConfigurationStatus kakao;
   final ConfigurationStatus supabase;
   final ConfigurationStatus mapbox;
-  final String? naverError;
+  final String? kakaoError;
+  final bool kakaoLoaded;
   final bool supabaseInitialized;
   final bool mapboxInitialized;
 
@@ -25,8 +26,9 @@ class ServiceStatusSheet extends StatelessWidget {
           const SizedBox(height: 8),
           const Text('입력 형식만 확인합니다. 실제 인증과 연결은 지도·친구방·다운로드를 실행해 확인하세요.'),
           const SizedBox(height: 16),
-          _entry('Naver Maps', naver,
-            issue: naverError == null ? null : '지도 초기화 또는 인증 실패'),
+          _entry('Kakao Maps', kakao,
+            issue: kakaoError != null ? '인증/초기화 실패'
+                : kakaoLoaded ? '지도 로드 성공' : '초기화 중 · 지도 연결 확인 필요'),
           _entry('Supabase', supabase,
             issue: supabaseInitialized ? null : '초기화 실패'),
           _entry('Mapbox', mapbox,

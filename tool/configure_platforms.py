@@ -43,9 +43,7 @@ for path in (root / 'android/app/build.gradle.kts',
     gradle = gradle.replace('compileSdkVersion flutter.compileSdkVersion', 'compileSdkVersion 36')
     path.write_text(gradle)
 
-# Naver 1.4 applies the legacy Kotlin Gradle plugin while Mapbox 2.31 only
-# applies it when AGP is below 9. Pin a common AGP 8 toolchain until both
-# upstream plugins support AGP 9's built-in Kotlin together.
+# Keep the native bridge on a tested AGP/Kotlin pair alongside Mapbox.
 settings = root / 'android/settings.gradle.kts'
 if settings.exists():
     contents = settings.read_text()
@@ -71,7 +69,21 @@ if app_gradle.exists():
             raise RuntimeError('Flutter Android app plugin anchor not found')
         contents = contents.replace(anchor,
             anchor + '    id("org.jetbrains.kotlin.android")\n', 1)
+    dependency = 'implementation("com.kakao.maps.open:android:2.15.2")'
+    if dependency not in contents:
+        contents += '\ndependencies {\n    ' + dependency + '\n}\n'
     app_gradle.write_text(contents)
+
+project_gradle = root / 'android/build.gradle.kts'
+if project_gradle.exists():
+    contents = project_gradle.read_text()
+    repository = 'maven(url = "https://devrepo.kakao.com/nexus/repository/kakaomap-releases/")'
+    if repository not in contents:
+        anchor = '    repositories {\n'
+        if anchor not in contents:
+            raise RuntimeError('Android repositories anchor not found')
+        contents = contents.replace(anchor, anchor + '        ' + repository + '\n', 1)
+    project_gradle.write_text(contents)
 
 wrapper = root / 'android/gradle/wrapper/gradle-wrapper.properties'
 if wrapper.exists():
@@ -124,6 +136,12 @@ if podfile.exists():
             "        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']\n"
             f"        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << '{flag}'\n"
             "      end\n    end")
+    kakao_pod = "  pod 'KakaoMapsSDK', '2.12.19'\n"
+    if kakao_pod not in pod:
+        anchor = '  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))'
+        if anchor not in pod:
+            raise RuntimeError('Flutter Runner pods anchor not found')
+        pod = pod.replace(anchor, kakao_pod + anchor, 1)
     podfile.write_text(pod)
 
 project = root / 'ios/Runner.xcodeproj/project.pbxproj'

@@ -82,7 +82,7 @@ class _OfflineMapsSheetState extends State<OfflineMapsSheet> {
               if (!maps.configured) const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
                 child: Text('Mapbox 토큰이 없어 다운로드 기능이 비활성화되었습니다. '
-                    '네이버 지도와 나침반은 계속 사용할 수 있습니다.')),
+                    '카카오 지도와 나침반은 계속 사용할 수 있습니다.')),
               if (draft == null) const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
                 child: Text('현재 위치를 확인한 뒤 주변 지역을 다운로드할 수 있습니다.')),

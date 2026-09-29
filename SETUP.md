@@ -2,16 +2,33 @@
 
 ## 1. 앱 식별자
 
-Android `applicationId`와 `namespace`, iOS/iPadOS Runner Bundle ID는 모두 `com.ybaf100.compass`입니다. `bash tool/bootstrap.sh`를 다시 실행해도 같은 값으로 고정됩니다. iOS RunnerTests는 `com.ybaf100.compass.RunnerTests`입니다. Naver 콘솔에는 **Runner의 ID**를 등록하세요. 앱 표시 이름은 `목적지 나침반`입니다. SideStore 호환을 위해 미서명 IPA의 표시 이름만 `Compass`로 포장하며 Bundle ID는 유지합니다. 서명 도구가 Bundle ID를 변경할 수 있습니다.
+Android `applicationId`와 `namespace`, iOS/iPadOS Runner Bundle ID는 모두 `com.ybaf100.compass`입니다. `bash tool/bootstrap.sh`를 다시 실행해도 같은 값으로 고정됩니다. iOS RunnerTests는 `com.ybaf100.compass.RunnerTests`입니다. Kakao Developers에는 **Runner의 ID**를 등록하세요. 앱 표시 이름은 `목적지 나침반`입니다. SideStore 호환을 위해 미서명 IPA의 표시 이름만 `Compass`로 포장하며 Bundle ID는 유지합니다. 서명 도구가 Bundle ID를 변경할 수 있습니다.
 
-## 2. Naver Maps 설정
+## 2. Kakao Maps 설정
 
-1. [NAVER Cloud Platform](https://console.ncloud.com/)에 로그인하고 콘솔 상단에서 **VPC** 환경을 선택합니다. **Menu → All Services → Application Services → Maps**에서 이용 신청을 마칩니다.
-2. **Application → Application 등록**에서 이름을 입력하고 **API 선택 → Dynamic Map**을 선택합니다. 이 항목이 모바일 지도 SDK용입니다.
-3. **서비스 환경 등록**에 Android 앱 패키지 이름 `com.ybaf100.compass`, iOS Bundle ID `com.ybaf100.compass`를 모두 입력하고 등록합니다. iPadOS도 같은 iOS Bundle ID를 사용합니다.
-4. Application 목록에서 **인증 정보**를 열고 **Client ID**를 복사해 `NAVER_MAP_CLIENT_ID`에 넣습니다. **Client Secret은 앱에 넣지 않습니다.**
+1. [Kakao Developers](https://developers.kakao.com/)에 로그인해 **앱 관리 → 앱 생성**에서 앱을 만듭니다.
+2. 해당 앱의 **카카오맵 → 사용 설정**에서 상태를 **ON**으로 설정합니다. 2026년 7월 이후의 지도 API 사용량/무료 할당량 정책과 필요한 결제 설정도 확인합니다.
+3. 앱 관리의 **앱 설정 → 앱 → 플랫폼 키 → 네이티브 앱 키**에서 키를 확인합니다. **REST API 키, JavaScript 키, Admin 키가 아닙니다.** 이 값을 `KAKAO_NATIVE_APP_KEY`에 입력합니다.
+4. 같은 네이티브 앱 키의 **Android 플랫폼 정보**에 Package Name `com.ybaf100.compass`와 실제 서명 인증서의 Key Hash를 등록합니다. 각 개발자의 debug 키, 릴리스 키, Google Play App Signing 키는 서로 다를 수 있으므로 실제로 배포하는 모든 서명 키의 해시를 등록합니다.
+5. **iOS 플랫폼 정보**에 Bundle ID `com.ybaf100.compass`를 등록합니다. iPadOS도 같은 Bundle ID입니다. SideStore/AltStore의 재서명 과정에서 Bundle ID가 변경되면 등록값과 일치하지 않아 인증이 실패할 수 있습니다.
 
-[현재 Maps Application 안내](https://guide.ncloud-docs.com/docs/application-maps-app-vpc), [사용 중인 Flutter 플러그인의 설정 안내](https://pub.dev/packages/flutter_naver_map)를 참고하세요. 등록한 패키지/Bundle ID와 실제 빌드 식별자가 일치해야 합니다.
+공식 [지도 시작하기](https://developers.kakao.com/docs/ko/kakaomap/common), [네이티브 앱 키 및 플랫폼 정보](https://developers.kakao.com/docs/ko/app-setting/app), [Android 키 해시](https://developers.kakao.com/docs/ko/android/getting-started)를 참고하세요. SDK 자체는 공식 Android v2 `2.15.2`, iOS v2 `2.12.19`를 사용합니다.
+
+### Android 서명 Key Hash
+
+아래 도구는 **실제 APK 서명 인증서**의 SHA-1을 Kakao의 Base64 Key Hash 형식으로 출력합니다. Android SDK의 `apksigner`가 PATH에 있어야 합니다.
+
+```bash
+python3 tool/print_android_kakao_key_hash.py --apk build/app/outputs/flutter-apk/app-debug.apk
+```
+
+릴리스 keystore가 있다면 `keytool`로 공개 인증서만 추출하여 같은 해시를 계산합니다. 암호는 프롬프트에서 입력하며 저장소나 명령줄에 적지 않습니다.
+
+```bash
+python3 tool/print_android_kakao_key_hash.py --keystore /안전한/경로/release.jks --alias 릴리스_별칭
+```
+
+GitHub Actions의 현재 `flutter build apk --debug`는 runner가 생성한 **일회성 debug keystore**로 서명될 수 있습니다. 매 실행 인증서가 안정적이라고 가정하지 마세요. CI artifact ZIP에서 APK를 꺼내 첫 번째 명령으로 **그 APK 자체**의 해시를 확인해 등록해야 Kakao 인증을 검증할 수 있습니다. 안정적인 배포용 서명이 필요하면 본인이 관리하는 keystore를 GitHub **Settings → Secrets and variables → Actions → Secrets**에 `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`로 보관하고 별도 release-signing 빌드 단계를 구성하세요. 현재 workflow는 이 Secrets를 사용하지 않으며 keystore를 생성·커밋하지 않습니다.
 
 ## 3. Supabase 설정
 
@@ -40,7 +57,16 @@ Android `applicationId`와 `namespace`, iOS/iPadOS Runner Bundle ID는 모두 `c
 cp config/defines.example.json config/defines.local.json
 ```
 
-`config/defines.local.json`의 `NAVER_MAP_CLIENT_ID`에는 Naver Client ID, `SUPABASE_URL`에는 HTTPS Project URL, `SUPABASE_PUBLISHABLE_KEY`에는 publishable key, `MAPBOX_ACCESS_TOKEN`에는 `pk.` public token을 입력합니다. 파일은 `.gitignore`로 제외되지만 로컬 기기에서 안전하게 관리하세요. 키를 채우지 않아도 앱과 나침반은 실행되며 해당 서비스만 비활성화됩니다. 기존 개별 `--dart-define=이름=값`도 사용할 수 있습니다.
+`config/defines.local.json`의 `KAKAO_NATIVE_APP_KEY`에는 Kakao Developers의 Native app key, `SUPABASE_URL`에는 HTTPS Project URL, `SUPABASE_PUBLISHABLE_KEY`에는 publishable key, `MAPBOX_ACCESS_TOKEN`에는 `pk.` public token을 입력합니다. 파일은 `.gitignore`로 제외되지만 로컬 기기에서 안전하게 관리하세요. 키를 채우지 않아도 앱과 나침반은 실행되며 해당 서비스만 비활성화됩니다. 기존 개별 `--dart-define=이름=값`도 사용할 수 있습니다.
+
+```json
+{
+  "KAKAO_NATIVE_APP_KEY": "발급받은_Native_app_key",
+  "SUPABASE_URL": "https://프로젝트.supabase.co",
+  "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_...",
+  "MAPBOX_ACCESS_TOKEN": "pk...."
+}
+```
 
 ## 6. 로컬 실행
 
@@ -59,7 +85,7 @@ flutter run --dart-define-from-file=config/defines.local.json
 
 | 변수 | 입력 값 |
 | --- | --- |
-| `NAVER_MAP_CLIENT_ID` | Naver Application의 Client ID |
+| `KAKAO_NATIVE_APP_KEY` | Kakao Developers의 Native app key |
 | `SUPABASE_URL` | Supabase Project URL (`https://...supabase.co`) |
 | `SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_...` |
 | `MAPBOX_ACCESS_TOKEN` | `pk.` public token |
@@ -79,21 +105,21 @@ flutter build ios --simulator --debug --dart-define-from-file=config/defines.loc
 flutter build ios --release --no-codesign --dart-define-from-file=config/defines.local.json
 ```
 
-GitHub Variables를 저장한 뒤 **Actions → verify compass → 최신 실행 → Re-run all jobs**를 누르거나 작업 브랜치에 새 커밋을 push합니다. 해당 실행의 **Artifacts**에서 `compass-android-debug`(APK), `compass-ios-simulator`(시뮬레이터 ZIP), `compass-ios-sideload-unsigned`(미서명 IPA가 담긴 ZIP)를 받습니다. Re-run 시점에 Variables가 다시 평가되는지 확실히 하려면 새 커밋으로 새 실행을 시작하세요. 미서명 IPA는 Apple 서명/프로비저닝이 없으므로 바로 설치되지 않습니다. 서명 도구가 Bundle ID를 바꾸면 Naver 등록값과 재대조하세요.
+GitHub Variables를 저장한 뒤 **Actions → verify compass → 최신 실행 → Re-run all jobs**를 누르거나 작업 브랜치에 새 커밋을 push합니다. 해당 실행의 **Artifacts**에서 `compass-android-debug`(APK), `compass-ios-simulator`(시뮬레이터 ZIP), `compass-ios-sideload-unsigned`(미서명 IPA가 담긴 ZIP)를 받습니다. Re-run 시점에 Variables가 다시 평가되는지 확실히 하려면 새 커밋으로 새 실행을 시작하세요. 미서명 IPA는 Apple 서명/프로비저닝이 없으므로 바로 설치되지 않습니다. 서명 도구가 Bundle ID를 바꾸면 Kakao 등록값과 재대조하세요.
 
 ## 9. 실제 기기 체크리스트
 
 - iPhone/iPad 세로·가로 및 Android 전화·태블릿에서 화면 크기, 목적지 선택, 나침반 전체화면 스와이프를 확인합니다.
 - 위치 권한 거부→허용, GPS 거리, heading 진북과 359°↔0° 회전, 앱 background→foreground 복귀를 확인합니다.
-- Naver 로딩·인증, 친구 marker, 방 참가, Ping, 공유 목적지, 친구 따라가기와 오래된 위치 표시를 두 기기에서 확인합니다.
+- Kakao 로딩·인증, 친구 marker, 방 참가, Ping, 공유 목적지, 친구 따라가기와 오래된 위치 표시를 두 기기에서 확인합니다.
 - Mapbox 지역 다운로드·삭제·재시도, 비행기 모드에서 오프라인 지도와 Compass 유지, 온라인 복구 시 카메라 상태를 확인합니다.
 
 ## 10. 문제 해결
 
 | 증상 | 확인할 것 |
 | --- | --- |
-| Naver 401 또는 인증 실패 | Client ID, Dynamic Map 활성화, Android package/iOS Bundle ID와 실제 설치 앱 ID 일치. 사이드로드 서명 도구가 ID를 바꾸지 않았는지 확인 |
-| Naver 429 | Dynamic Map 선택 여부와 사용량/할당량 확인. 별도 Geocoding API 호출의 429라면 그 API도 신청했는지 확인 |
+| Kakao 401/403 또는 인증 실패 | Native app key, 카카오맵 사용 설정 ON, 실제 서명 APK의 Key Hash와 Android package, iOS Bundle ID를 확인. 사이드로드 도구가 ID를 바꾸지 않았는지도 확인 |
+| Kakao 429 | 카카오맵 사용량/할당량 및 유료 API 설정 확인 |
 | Supabase 친구방 사용 불가 | HTTPS URL, publishable key, Anonymous Sign-Ins, SQL migration 실행 결과, publication/Realtime, 네트워크 확인 |
 | Mapbox 지도 없음 | `pk.` public token과 `styles:read`/`fonts:read` scope, 온라인에서 유효한 지역 다운로드, 현재 GPS가 해당 지역 안에 있는지 확인 |
 | 지도 실패 중 나침반 | GPS 권한과 heading 센서, 저장된 목적지를 확인. 지도 서비스 설정과 별개로 Compass가 작동하도록 구성됨 |

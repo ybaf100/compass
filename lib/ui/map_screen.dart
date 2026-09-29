@@ -74,9 +74,9 @@ class _MapScreenState extends State<MapScreen>
     },
   );
 
-  MapMode get _mode => widget.mapMode?.mode ?? MapMode.onlineNaver;
+  MapMode get _mode => widget.mapMode?.mode ?? MapMode.onlineKakao;
   MapProvider? get _activeMap => switch (_mode) {
-    MapMode.onlineNaver => widget.mapProvider,
+    MapMode.onlineKakao => widget.mapProvider,
     MapMode.offlineMapbox => widget.offlineMapProvider,
     MapMode.mapUnavailable => null,
   };
@@ -101,10 +101,10 @@ class _MapScreenState extends State<MapScreen>
     widget.roomController?.addListener(_onRoomChanged);
     widget.navigationController?.addListener(_onControllerChanged);
     widget.mapMode?.addListener(_onMapModeChanged);
-    widget.mapError.addListener(_onNaverError);
+    widget.mapError.addListener(_onKakaoError);
     _previousMap = _activeMap;
     if (_activeMap != null) _armMapTimeout();
-    _onNaverError();
+    _onKakaoError();
     if (widget.offlineMaps != null) unawaited(widget.offlineMaps!.start());
     unawaited(widget.controller.start());
     if (widget.roomController != null) {
@@ -186,15 +186,15 @@ class _MapScreenState extends State<MapScreen>
     if (mounted) setState(() {});
   }
 
-  void _onNaverError() {
-    if (widget.mapError.value != null) widget.mapMode?.naverFailure();
+  void _onKakaoError() {
+    if (widget.mapError.value != null) widget.mapMode?.kakaoFailure();
   }
 
   void _onMapModeChanged() {
     final old = _previousMap;
     final next = _activeMap;
     if (old == next) return;
-    if (_mode == MapMode.onlineNaver && old != next) {
+    if (_mode == MapMode.onlineKakao && old != next) {
       // A previous auth/load error can have been caused by a transient outage.
       // Give the new native map a fresh attempt; a persistent error is reported
       // again by the SDK or caught by the load timeout.
@@ -247,7 +247,7 @@ class _MapScreenState extends State<MapScreen>
     unawaited(operation.catchError((Object error) {
       if (mounted && providerAtStart == _activeMap) {
         setState(() => _mapOperationError = '지도를 조작할 수 없습니다. 다시 시도하세요.');
-        if (_mode == MapMode.onlineNaver) widget.mapMode?.naverFailure();
+        if (_mode == MapMode.onlineKakao) widget.mapMode?.kakaoFailure();
       }
     }));
   }
@@ -257,14 +257,14 @@ class _MapScreenState extends State<MapScreen>
     _mapTimeout = Timer(const Duration(seconds: 18), () {
       if (mounted && !_mapLoaded) {
         setState(() => _mapTimedOut = true);
-        if (_mode == MapMode.onlineNaver) widget.mapMode?.naverFailure();
+        if (_mode == MapMode.onlineKakao) widget.mapMode?.kakaoFailure();
       }
     });
   }
 
   void _retryMap() {
     widget.mapError.value = null;
-    widget.mapMode?.retryNaver();
+    widget.mapMode?.retryKakao();
     _activeMap?.reset();
     setState(() {
       _mapGeneration++;
@@ -294,7 +294,7 @@ class _MapScreenState extends State<MapScreen>
     widget.roomController?.removeListener(_onRoomChanged);
     widget.navigationController?.removeListener(_onControllerChanged);
     widget.mapMode?.removeListener(_onMapModeChanged);
-    widget.mapError.removeListener(_onNaverError);
+    widget.mapError.removeListener(_onKakaoError);
     _memberMotion.dispose();
     _expansion.dispose();
     _pinReveal.dispose();
@@ -406,14 +406,14 @@ class _MapScreenState extends State<MapScreen>
 
   Widget _buildMap(double collapsed) {
     if (widget.mapMode == null && !widget.mapConfigured) {
-      return _mapNotice('네이버 지도 Client ID가 설정되지 않았습니다.',
-        '실행 시 --dart-define=NAVER_MAP_CLIENT_ID=발급받은_ID를 지정하세요.');
+      return _mapNotice('카카오 지도 Native app key가 설정되지 않았습니다.',
+        '실행 시 --dart-define=KAKAO_NATIVE_APP_KEY=Native_app_key를 지정하세요.');
     }
     if (_mode == MapMode.mapUnavailable || _activeMap == null) {
       return _mapNotice('오프라인 · 이 지역의 지도가 없습니다.',
         '화살표는 계속 사용할 수 있습니다. 온라인 복구 또는 지역 다운로드를 확인하세요.',
         onRetry: widget.mapConfigured && widget.controller.hasNetwork != false
-            ? widget.mapMode?.retryNaver : null);
+            ? widget.mapMode?.retryKakao : null);
     }
     final map = _activeMap!;
     return Stack(children: [
@@ -431,9 +431,9 @@ class _MapScreenState extends State<MapScreen>
               _mapTimeout?.cancel();
               if (mounted) {
                 _syncMapOverlays();
-                if (_mode == MapMode.onlineNaver &&
+                if (_mode == MapMode.onlineKakao &&
                     widget.mapError.value == null) {
-                  widget.mapMode?.naverLoaded();
+                  widget.mapMode?.kakaoLoaded();
                 }
                 setState(() {
                   _mapLoaded = true;
@@ -454,15 +454,15 @@ class _MapScreenState extends State<MapScreen>
       ValueListenableBuilder<String?>(
         valueListenable: widget.mapError,
         builder: (context, authError, _) {
-          final message = (_mode == MapMode.onlineNaver ? authError : null) ??
+          final message = (_mode == MapMode.onlineKakao ? authError : null) ??
               _mapOperationError ??
               (widget.controller.hasNetwork == false
-                  && _mode == MapMode.onlineNaver
+                  && _mode == MapMode.onlineKakao
                   ? '온라인 지도를 불러올 수 없습니다.'
                   : _mapTimedOut ? '지도 로딩 시간이 초과되었습니다.' : null);
           if (message != null) {
             return Positioned.fill(child: _mapNotice(message,
-                '연결 상태와 네이버 지도 설정을 확인하세요.', onRetry: _retryMap));
+                '연결 상태와 카카오 지도 설정을 확인하세요.', onRetry: _retryMap));
           }
           if (_mapLoaded) return const SizedBox.shrink();
           return const Center(child: CircularProgressIndicator.adaptive());
@@ -551,7 +551,7 @@ class _MapScreenState extends State<MapScreen>
               ]),
             ),
           ),
-          if (_mode != MapMode.onlineNaver)
+          if (_mode != MapMode.onlineKakao)
             Align(alignment: Alignment.centerLeft,
               child: widget.mapConfigured && controller.hasNetwork != false
                   ? ActionChip(
@@ -559,7 +559,7 @@ class _MapScreenState extends State<MapScreen>
                       label: Text(_mode == MapMode.offlineMapbox
                           ? '오프라인 지도 · 온라인 재시도'
                           : '오프라인 · 지도 없음 · 온라인 재시도'),
-                      onPressed: widget.mapMode?.retryNaver,
+                      onPressed: widget.mapMode?.retryKakao,
                     )
                   : Chip(visualDensity: VisualDensity.compact,
                       label: Text(_mode == MapMode.offlineMapbox
@@ -722,10 +722,11 @@ class _MapScreenState extends State<MapScreen>
     showModalBottomSheet<void>(context: context, isScrollControlled: true,
       showDragHandle: true,
       builder: (context) => ServiceStatusSheet(
-        naver: settings.naverStatus,
+        kakao: settings.kakaoStatus,
         supabase: settings.supabaseStatus,
         mapbox: settings.mapboxStatus,
-        naverError: widget.mapError.value,
+        kakaoError: widget.mapError.value,
+        kakaoLoaded: _mapLoaded && _mode == MapMode.onlineKakao,
         supabaseInitialized: widget.supabaseInitialized,
         mapboxInitialized: widget.mapboxInitialized));
   }

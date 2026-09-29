@@ -8,7 +8,7 @@ import 'core/location/geolocator_location_provider.dart';
 import 'core/network/network_monitor.dart';
 import 'destination/destination_controller.dart';
 import 'destination/destination_store.dart';
-import 'map/naver_map_provider.dart';
+import 'map/kakao_map_provider.dart';
 import 'map/mapbox_offline_map_provider.dart';
 import 'map/map_mode_controller.dart';
 import 'offline/offline_map_controller.dart';
@@ -48,14 +48,16 @@ class _DestinationCompassAppState extends State<DestinationCompassApp> {
     networkMonitor: ConnectivityNetworkMonitor(),
     store: PreferencesDestinationStore(),
   );
-  late final NaverMapProvider _mapProvider = NaverMapProvider();
+  late final KakaoMapProvider _mapProvider = KakaoMapProvider(
+    appKey: widget.configuration.kakaoNativeAppKey,
+    onFailure: (message) => widget.mapError.value = message);
   late final MapboxOfflineMapProvider? _offlineProvider =
       widget.mapboxConfigured ? MapboxOfflineMapProvider() : null;
   late final OfflineMapController _offlineMaps = OfflineMapController(
     repository: PreferencesOfflineRegionRepository(),
     backend: widget.mapboxConfigured ? MapboxTileBackend() : null);
   late final MapModeController _mapMode = MapModeController(
-    naverConfigured: widget.mapConfigured, offlineMaps: _offlineMaps);
+    kakaoConfigured: widget.mapConfigured, offlineMaps: _offlineMaps);
   late final RoomController _roomController = RoomController(
     repository: widget.roomRepository,
     profileStore: PreferencesProfileStore(),

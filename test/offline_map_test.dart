@@ -124,7 +124,7 @@ void main() {
     final downloads = OfflineMapController(repository: store, backend: backend);
     await downloads.start();
     await downloads.download(downloads.draft(center, 5));
-    final mode = MapModeController(naverConfigured: true,
+    final mode = MapModeController(kakaoConfigured: true,
       offlineMaps: downloads, switchDelay: const Duration(milliseconds: 1),
       recoveryDelay: const Duration(milliseconds: 1));
     mode.update(connected: false, position: center);
@@ -132,16 +132,16 @@ void main() {
     expect(mode.mode, MapMode.offlineMapbox);
     mode.update(connected: true);
     await settle();
-    expect(mode.mode, MapMode.onlineNaver);
-    mode.naverFailure();
+    expect(mode.mode, MapMode.onlineKakao);
+    mode.kakaoFailure();
     await settle();
     expect(mode.mode, MapMode.offlineMapbox);
     mode.update(position: const GeoPoint(38, 128));
     await settle();
     expect(mode.mode, MapMode.mapUnavailable);
-    mode.retryNaver();
+    mode.retryKakao();
     await settle();
-    expect(mode.mode, MapMode.onlineNaver);
+    expect(mode.mode, MapMode.onlineKakao);
     mode.dispose(); downloads.dispose();
   });
 
@@ -150,13 +150,13 @@ void main() {
       backend: _Backend());
     await downloads.start();
     await downloads.download(downloads.draft(center, 5));
-    final mode = MapModeController(naverConfigured: true,
+    final mode = MapModeController(kakaoConfigured: true,
       offlineMaps: downloads, switchDelay: const Duration(milliseconds: 40),
       recoveryDelay: const Duration(milliseconds: 40));
     mode.update(connected: false, position: center);
     mode.update(connected: true);
     await Future<void>.delayed(const Duration(milliseconds: 55));
-    expect(mode.mode, MapMode.onlineNaver);
+    expect(mode.mode, MapMode.onlineKakao);
     mode.dispose(); downloads.dispose();
   });
 }
