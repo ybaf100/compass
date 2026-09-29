@@ -5,9 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('production configuration contains no legacy online map references', () {
     final forbidden = [
-      'flutter_' + 'naver_map',
-      'NAVER_' + 'MAP_CLIENT_ID',
-      'Naver' + 'MapProvider',
+      ['flutter_', 'naver_map'].join(),
+      ['NAVER_', 'MAP_CLIENT_ID'].join(),
+      ['Naver', 'MapProvider'].join(),
     ];
     final files = <File>[
       ...Directory('lib').listSync(recursive: true).whereType<File>(),

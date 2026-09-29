@@ -144,6 +144,18 @@ if podfile.exists():
         pod = pod.replace(anchor, kakao_pod + anchor, 1)
     podfile.write_text(pod)
 
+# Flutter's Swift-Package-first template no longer includes CocoaPods xcconfigs.
+# Kakao's official iOS distribution uses CocoaPods, while Mapbox remains SPM.
+for configuration in ('Debug', 'Release'):
+    xcconfig = root / f'ios/Flutter/{configuration}.xcconfig'
+    if not xcconfig.exists():
+        continue
+    contents = xcconfig.read_text()
+    pods_include = (f'#include? "Pods/Target Support Files/Pods-Runner/'
+                    f'Pods-Runner.{configuration.lower()}.xcconfig"')
+    if pods_include not in contents:
+        xcconfig.write_text(pods_include + '\n' + contents)
+
 project = root / 'ios/Runner.xcodeproj/project.pbxproj'
 if project.exists():
     text = project.read_text()
