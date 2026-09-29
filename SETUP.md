@@ -8,9 +8,9 @@ Android `applicationId`와 `namespace`, iOS/iPadOS Runner Bundle ID는 모두 `c
 
 1. [Kakao Developers](https://developers.kakao.com/)에 로그인해 **앱 관리 → 앱 생성**에서 앱을 만듭니다.
 2. 해당 앱의 **카카오맵 → 사용 설정**에서 상태를 **ON**으로 설정합니다. 2026년 7월 이후의 지도 API 사용량/무료 할당량 정책과 필요한 결제 설정도 확인합니다.
-3. 앱 관리의 **앱 설정 → 앱 → 플랫폼 키 → 네이티브 앱 키**에서 키를 확인합니다. **REST API 키, JavaScript 키, Admin 키가 아닙니다.** 이 값을 `KAKAO_NATIVE_APP_KEY`에 입력합니다.
-4. 같은 네이티브 앱 키의 **Android 플랫폼 정보**에 Package Name `com.ybaf100.compass`와 실제 서명 인증서의 Key Hash를 등록합니다. 각 개발자의 debug 키, 릴리스 키, Google Play App Signing 키는 서로 다를 수 있으므로 실제로 배포하는 모든 서명 키의 해시를 등록합니다.
-5. **iOS 플랫폼 정보**에 Bundle ID `com.ybaf100.compass`를 등록합니다. iPadOS도 같은 Bundle ID입니다. SideStore/AltStore의 재서명 과정에서 Bundle ID가 변경되면 등록값과 일치하지 않아 인증이 실패할 수 있습니다.
+3. 앱 관리 페이지의 **앱 → 플랫폼 키 → 네이티브 앱 키**에서 값을 복사합니다. **REST API 키, JavaScript 키, Admin 키가 아닙니다.** 이 값을 `KAKAO_NATIVE_APP_KEY`에 입력합니다.
+4. 같은 네이티브 앱 키 설정의 **패키지명**에 `com.ybaf100.compass`, **키 해시**에 실제 서명 인증서의 Key Hash를 등록하고 저장합니다. 각 개발자의 debug 키, 릴리스 키, Google Play App Signing 키는 서로 다를 수 있으므로 실제로 배포하는 모든 서명 키의 해시를 등록합니다.
+5. 같은 설정의 **번들 ID**에 `com.ybaf100.compass`를 등록하고 저장합니다. iPadOS도 같은 Bundle ID입니다. SideStore/AltStore의 재서명 과정에서 Bundle ID가 변경되면 등록값과 일치하지 않아 인증이 실패할 수 있습니다.
 
 공식 [지도 시작하기](https://developers.kakao.com/docs/ko/kakaomap/common), [네이티브 앱 키 및 플랫폼 정보](https://developers.kakao.com/docs/ko/app-setting/app), [Android 키 해시](https://developers.kakao.com/docs/ko/android/getting-started)를 참고하세요. SDK 자체는 공식 Android v2 `2.15.2`, iOS v2 `2.12.19`를 사용합니다.
 
