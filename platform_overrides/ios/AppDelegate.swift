@@ -50,7 +50,7 @@ private final class KakaoMapViewFactory: NSObject, FlutterPlatformViewFactory {
 }
 
 private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
-    KMControllerDelegate, KakaoMapEventDelegate {
+    MapControllerDelegate, KakaoMapEventDelegate {
   private let container: KMViewContainer
   private let channel: FlutterMethodChannel
   private var controller: KMController?
