@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.PointF
 import android.view.View
 import com.kakao.vectormap.KakaoMap
 import com.kakao.vectormap.KakaoMapReadyCallback
@@ -13,13 +12,14 @@ import com.kakao.vectormap.KakaoMapSdk
 import com.kakao.vectormap.LatLng
 import com.kakao.vectormap.MapLifeCycleCallback
 import com.kakao.vectormap.MapView
+import com.kakao.vectormap.GestureType
 import com.kakao.vectormap.camera.CameraPosition
 import com.kakao.vectormap.camera.CameraUpdateFactory
-import com.kakao.vectormap.camera.GestureType
 import com.kakao.vectormap.label.Label
 import com.kakao.vectormap.label.LabelOptions
 import com.kakao.vectormap.label.LabelStyles
 import com.kakao.vectormap.label.LabelStyle
+import com.kakao.vectormap.label.LabelTextBuilder
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -61,21 +61,27 @@ internal class KakaoMapPlatformView(
     private var pendingCamera: Map<*, *>? = null
     private var bottomPadding = 0.0
     private var disposed = false
+    private var failed = false
 
     init {
         channel.setMethodCallHandler(::handle)
         if (appKey.isBlank()) {
+            failed = true
             event(mapOf("type" to "failed"))
         } else {
             try {
                 KakaoMapSdk.init(context.applicationContext, appKey)
                 mapView.start(object : MapLifeCycleCallback() {
                     override fun onMapDestroy() { map = null }
-                    override fun onMapError(error: Exception) { event(mapOf("type" to "failed")) }
+                    override fun onMapError(error: Exception) {
+                        failed = true
+                        event(mapOf("type" to "failed"))
+                    }
                 }, object : KakaoMapReadyCallback() {
                     override fun onMapReady(kakaoMap: KakaoMap) {
                         if (disposed) return
                         map = kakaoMap
+                        failed = false
                         kakaoMap.setOnMapClickListener { _, position, _, _ ->
                             event(mapOf("type" to "tap", "latitude" to position.latitude,
                                 "longitude" to position.longitude))
@@ -100,6 +106,7 @@ internal class KakaoMapPlatformView(
                     }
                 })
             } catch (_: Exception) {
+                failed = true
                 event(mapOf("type" to "failed"))
             }
         }
@@ -109,6 +116,10 @@ internal class KakaoMapPlatformView(
         if (disposed) { result.success(null); return }
         try {
             when (call.method) {
+                "status" -> {
+                    result.success(if (map != null) "loaded" else if (failed) "failed" else "initializing")
+                    return
+                }
                 "overlays" -> {
                     pendingMarkers = (call.argument<List<*>>("markers") ?: emptyList<Any>())
                         .mapNotNull { it as? Map<*, *> }
@@ -135,12 +146,11 @@ internal class KakaoMapPlatformView(
             "candidate" to 0xFF3970DF.toInt(), "destination" to 0xFFED6541.toInt(),
             "member" to 0xFF2EBF9F.toInt(), "stale" to 0xFF8796A0.toInt(),
             "ping" to 0xFFF0AF40.toInt())
-        val manager = kakaoMap.labelManager
+        val manager = kakaoMap.labelManager ?: return
         for ((kind, color) in palette) {
             val style = LabelStyles.from(LabelStyle.from(icon(color))
                 .setTextStyles(13, Color.WHITE, 3, Color.BLACK))
-                .setStyleId("compass-$kind")
-            styles[kind] = manager.addLabelStyles(style)
+            manager.addLabelStyles(style)?.let { styles[kind] = it }
         }
     }
 
@@ -158,7 +168,7 @@ internal class KakaoMapPlatformView(
 
     private fun applyMarkers() {
         val kakaoMap = map ?: return
-        val layer = kakaoMap.labelManager.layer
+        val layer = kakaoMap.labelManager?.layer ?: return
         val desired = pendingMarkers.mapNotNull { it["id"] as? String }.toSet()
         for (id in labels.keys.toList()) {
             if (id !in desired) { labels.remove(id)?.remove(); kinds.remove(id) }
@@ -174,14 +184,15 @@ internal class KakaoMapPlatformView(
             val existing = labels[id]
             if (existing == null) {
                 labels[id] = layer.addLabel(LabelOptions.from(id, position)
-                    .setStyles(style).setTexts(caption).setClickable(id.startsWith("member:")))
+                    .setStyles(style).setTexts(LabelTextBuilder().setTexts(caption))
+                    .setClickable(id.startsWith("member:")))
             } else {
                 if (existing.position != position) {
-                    if (id.startsWith("member:")) existing.moveTo(position, 250)
-                    else existing.moveTo(position)
+                    // Dart's MemberMarkerMotion already interpolates short moves.
+                    existing.moveTo(position)
                 }
                 if (kinds[id] != kind) existing.setStyles(style)
-                existing.setTexts(caption)
+                existing.setTexts(LabelTextBuilder().setTexts(caption))
                 existing.invalidate()
             }
             kinds[id] = kind

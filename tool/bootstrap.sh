@@ -20,6 +20,7 @@ cp platform_overrides/android/KakaoMapPlatformView.kt \
 rm -f android/app/src/main/kotlin/com/ybaf100/destination_compass/MainActivity.kt
 rm -f android/app/src/main/kotlin/com/example/destination_compass/MainActivity.kt
 cp platform_overrides/ios/AppDelegate.swift ios/Runner/AppDelegate.swift
+cp platform_overrides/ios/Podfile ios/Podfile
 python3 tool/configure_platforms.py
 python3 tool/verify_app_identity.py
 flutter pub get

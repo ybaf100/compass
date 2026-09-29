@@ -61,6 +61,7 @@ class KakaoMapProvider implements MapProvider, CameraAwareMapProvider {
               .catchError((Object _) {});
           _scheduleSync();
         case 'loaded':
+          if (_ready) return;
           _ready = true;
           _queue(() async {
             if (_camera != null) {

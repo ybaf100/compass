@@ -62,6 +62,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
   private var pendingCamera: [String: Any]?
   private var bottomPadding: CGFloat = 0
   private var disposed = false
+  private var failed = false
   private var foregroundObserver: NSObjectProtocol?
   private var backgroundObserver: NSObjectProtocol?
 
@@ -74,6 +75,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
       self?.handle(call, result: result)
     }
     guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      failed = true
       event(["type": "failed"])
       return
     }
@@ -109,6 +111,8 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
 
   private func handle(_ call: FlutterMethodCall, result: FlutterResult) {
     switch call.method {
+    case "status":
+      result(map != nil ? "loaded" : failed ? "failed" : "initializing")
     case "overlays":
       markers = ((call.arguments as? [String: Any])?["markers"] as? [[String: Any]]) ?? []
       applyMarkers()
@@ -126,6 +130,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
   }
 
   func authenticationFailed(_ errorCode: Int, desc: String) {
+    failed = true
     event(["type": "failed"])
   }
 
@@ -141,6 +146,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
       return
     }
     map = kakaoMap
+    failed = false
     kakaoMap.eventDelegate = self
     kakaoMap.viewRect = container.bounds
     kakaoMap.keepLevelOnResize = true
@@ -170,6 +176,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
   }
 
   func addViewFailed(_ viewName: String, viewInfoName: String) {
+    failed = true
     event(["type": "failed"])
   }
 
@@ -204,7 +211,8 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
       let styleID = "compass-\(kind)"
       let caption = marker["label"] as? String ?? ""
       if let poi = pois[id] {
-        poi.moveAt(position, duration: id.hasPrefix("member:") ? 250 : 0)
+        // Dart's MemberMarkerMotion supplies intermediate positions.
+        poi.moveAt(position, duration: 0)
         if kinds[id] != kind || !caption.isEmpty {
           poi.changeTextAndStyle(texts: [PoiText(text: caption, styleIndex: 0)],
             styleID: styleID)
