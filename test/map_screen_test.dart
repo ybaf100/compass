@@ -8,6 +8,7 @@ import 'package:destination_compass/destination/destination_model.dart';
 import 'package:destination_compass/destination/destination_store.dart';
 import 'package:destination_compass/map/map_provider.dart';
 import 'package:destination_compass/map/map_mode_controller.dart';
+import 'package:destination_compass/map/kakao_map_state.dart';
 import 'package:destination_compass/offline/offline_map_controller.dart';
 import 'package:destination_compass/offline/offline_region.dart';
 import 'package:destination_compass/offline/offline_region_repository.dart';
@@ -39,10 +40,11 @@ class _Heading implements HeadingProvider {
 }
 
 class _Network implements NetworkMonitor {
+  NetworkStatus status = const NetworkStatus(NetworkState.available);
   @override
-  Future<bool> get hasConnection async => true;
+  Future<NetworkStatus> get current async => status;
   @override
-  Stream<bool> get changes => const Stream.empty();
+  Stream<NetworkStatus> get changes => const Stream.empty();
 }
 
 class _Store implements DestinationStore {
@@ -60,6 +62,8 @@ class _Map implements MapProvider, CameraAwareMapProvider {
   Destination? destination;
   GeoPoint? candidate;
   bool loaded = false;
+  bool emitLoaded = true;
+  int resets = 0;
   @override
   MapCameraState? get cameraState => state;
   @override
@@ -72,7 +76,7 @@ class _Map implements MapProvider, CameraAwareMapProvider {
     required VoidCallback onGesture,
     void Function(String memberId)? onMemberTapped,
   }) {
-    if (!loaded) {
+    if (!loaded && emitLoaded) {
       loaded = true;
       WidgetsBinding.instance.addPostFrameCallback((_) => onLoaded());
     }
@@ -95,7 +99,7 @@ class _Map implements MapProvider, CameraAwareMapProvider {
   @override
   Future<void> setSharedPings(List<MapPingOverlay> pings) async {}
   @override
-  void reset() { loaded = false; }
+  void reset() { loaded = false; resets++; }
   @override
   void dispose() {}
 }
@@ -129,7 +133,7 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final controller = DestinationController(locationProvider: _Location(),
       headingProvider: _Heading(), networkMonitor: _Network(), store: _Store());
-    final error = ValueNotifier<String?>(null);
+    final error = ValueNotifier<KakaoFailure?>(null);
     await tester.pumpWidget(MaterialApp(home: MapScreen(
       controller: controller, mapProvider: _Map(),
       mapConfigured: false, mapError: error,
@@ -153,7 +157,7 @@ void main() {
     final controller = DestinationController(
       locationProvider: _Location(), headingProvider: _Heading(),
       networkMonitor: _Network(), store: _Store());
-    final error = ValueNotifier<String?>(null);
+    final error = ValueNotifier<KakaoFailure?>(null);
     await tester.pumpWidget(MaterialApp(home: MapScreen(
       controller: controller, mapProvider: _Map(),
       mapConfigured: false, mapError: error)));
@@ -179,7 +183,7 @@ void main() {
     final controller = DestinationController(
       locationProvider: _Location(), headingProvider: _Heading(),
       networkMonitor: _Network(), store: store);
-    final error = ValueNotifier<String?>(null);
+    final error = ValueNotifier<KakaoFailure?>(null);
     await tester.pumpWidget(MaterialApp(home: MapScreen(
       controller: controller, mapProvider: _Map(),
       mapConfigured: false, mapError: error)));
@@ -215,7 +219,7 @@ void main() {
     final mode = MapModeController(kakaoConfigured: true, offlineMaps: maps,
       switchDelay: const Duration(milliseconds: 1),
       recoveryDelay: const Duration(milliseconds: 1));
-    final error = ValueNotifier<String?>(null);
+    final error = ValueNotifier<KakaoFailure?>(null);
     await tester.pumpWidget(MaterialApp(home: MapScreen(controller: controller,
       mapProvider: online, offlineMapProvider: offline,
       offlineMaps: maps, mapMode: mode,
@@ -224,7 +228,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 10));
     controller.selectPoint(const GeoPoint(37.54, 127.12));
     await tester.pump();
-    mode.update(connected: false, position: center);
+    mode.update(networkState: NetworkState.unavailable, position: center);
     await tester.pump(const Duration(milliseconds: 5));
     await tester.pump();
     expect(mode.mode, MapMode.offlineMapbox);
@@ -242,12 +246,67 @@ void main() {
     expect(mode.mode, MapMode.mapUnavailable);
     expect(find.text('오프라인 · 이 지역의 지도가 없습니다.'), findsOneWidget);
     expect(find.byType(CompassPanel), findsOneWidget);
-    mode.update(connected: true);
+    mode.update(networkState: NetworkState.available);
     await tester.pump(const Duration(milliseconds: 5));
     await tester.pump();
     expect(mode.mode, MapMode.onlineKakao);
     expect(online.state?.zoom, 10);
     expect(online.state?.center, const GeoPoint(37.51, 127.09));
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose(); mode.dispose(); maps.dispose(); error.dispose();
+  });
+
+  testWidgets('unknown still builds Kakao; SDK timeout is not labeled offline; resume retries', (tester) async {
+    final network = _Network()..status = const NetworkStatus.unknown(failure: NetworkFailure.plugin);
+    final controller = DestinationController(locationProvider: _Location(),
+      headingProvider: _Heading(), networkMonitor: network, store: _Store());
+    final maps = OfflineMapController(repository: _Regions(), backend: null);
+    final mode = MapModeController(kakaoConfigured: true, offlineMaps: maps,
+      switchDelay: const Duration(milliseconds: 1), recoveryDelay: const Duration(milliseconds: 1));
+    final map = _Map()..emitLoaded = false;
+    final error = ValueNotifier<KakaoFailure?>(null);
+    await tester.pumpWidget(MaterialApp(home: MapScreen(controller: controller,
+      mapProvider: map, offlineMaps: maps, mapMode: mode,
+      mapConfigured: true, mapError: error)));
+    await tester.pump();
+    expect(mode.mode, MapMode.onlineKakao);
+    expect(find.text('연결 상태를 확인하는 중입니다.'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 19));
+    await tester.pump(const Duration(milliseconds: 10));
+    expect(error.value, KakaoFailure.timeout);
+    expect(find.text('카카오 지도 응답이 없습니다.'), findsOneWidget);
+    expect(find.text('오프라인 · 이 지역의 지도가 없습니다.'), findsNothing);
+    expect(controller.networkState, NetworkState.unknown);
+    map.emitLoaded = true;
+    network.status = const NetworkStatus(NetworkState.available);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump(); await tester.pump(const Duration(milliseconds: 10)); await tester.pump();
+    expect(controller.networkState, NetworkState.available);
+    expect(mode.mode, MapMode.onlineKakao);
+    expect(error.value, isNull);
+    expect(find.byType(CompassPanel), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose(); mode.dispose(); maps.dispose(); error.dispose();
+  });
+
+  testWidgets('Kakao auth failure with available network reports SDK failure', (tester) async {
+    final controller = DestinationController(locationProvider: _Location(),
+      headingProvider: _Heading(), networkMonitor: _Network(), store: _Store());
+    final maps = OfflineMapController(repository: _Regions(), backend: null);
+    final mode = MapModeController(kakaoConfigured: true, offlineMaps: maps,
+      switchDelay: const Duration(milliseconds: 1));
+    final error = ValueNotifier<KakaoFailure?>(null);
+    await tester.pumpWidget(MaterialApp(home: MapScreen(controller: controller,
+      mapProvider: _Map(), offlineMaps: maps, mapMode: mode,
+      mapConfigured: true, mapError: error)));
+    await tester.pump();
+    error.value = KakaoFailure.authentication;
+    await tester.pump(const Duration(milliseconds: 10)); await tester.pump();
+    expect(controller.networkState, NetworkState.available);
+    expect(mode.failure, KakaoFailure.authentication);
+    expect(find.text('카카오 지도 연결에 실패했습니다.'), findsOneWidget);
+    expect(find.text('오프라인 · 이 지역의 지도가 없습니다.'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose(); mode.dispose(); maps.dispose(); error.dispose();
   });

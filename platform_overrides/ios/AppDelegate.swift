@@ -4,32 +4,27 @@ import KakaoMapsSDK
 import UIKit
 
 @main
-@objc class AppDelegate: FlutterAppDelegate {
+@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private let headingBridge = HeadingBridge()
 
-  override func application(
-    _ application: UIApplication,
-    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
-  ) -> Bool {
-    guard let controller = window?.rootViewController as? FlutterViewController else {
-      return super.application(application, didFinishLaunchingWithOptions: launchOptions)
-    }
+  // UIScene creates the implicit engine after application launch. Register all
+  // plugins and custom channels here, without depending on an AppDelegate window.
+  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    let registrar = engineBridge.applicationRegistrar
+    let messenger = registrar.messenger()
     let events = FlutterEventChannel(
       name: "app.destination_compass/heading",
-      binaryMessenger: controller.binaryMessenger)
+      binaryMessenger: messenger)
     events.setStreamHandler(headingBridge)
     let methods = FlutterMethodChannel(
       name: "app.destination_compass/heading_control",
-      binaryMessenger: controller.binaryMessenger)
+      binaryMessenger: messenger)
     methods.setMethodCallHandler { [weak self] call, result in
       self?.headingBridge.handle(call, result: result)
     }
-    GeneratedPluginRegistrant.register(with: self)
-    if let registrar = self.registrar(forPlugin: "CompassKakaoMapView") {
-      registrar.register(KakaoMapViewFactory(messenger: controller.binaryMessenger),
-        withId: "app.destination_compass/kakao_map")
-    }
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    registrar.register(KakaoMapViewFactory(messenger: messenger),
+      withId: "app.destination_compass/kakao_map")
   }
 }
 
@@ -63,6 +58,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
   private var bottomPadding: CGFloat = 0
   private var disposed = false
   private var failed = false
+  private var failureCategory = "initialization"
   private var foregroundObserver: NSObjectProtocol?
   private var backgroundObserver: NSObjectProtocol?
 
@@ -76,7 +72,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
     }
     guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       failed = true
-      event(["type": "failed"])
+      event(["type": "failed", "category": failureCategory])
       return
     }
     SDKInitializer.InitSDK(appKey: key)
@@ -112,7 +108,8 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
   private func handle(_ call: FlutterMethodCall, result: FlutterResult) {
     switch call.method {
     case "status":
-      result(map != nil ? "loaded" : failed ? "failed" : "initializing")
+      result(["type": failed ? "failed" : map != nil ? "loaded" : "initializing",
+              "category": failureCategory])
     case "overlays":
       markers = ((call.arguments as? [String: Any])?["markers"] as? [[String: Any]]) ?? []
       applyMarkers()
@@ -131,7 +128,8 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
 
   func authenticationFailed(_ errorCode: Int, desc: String) {
     failed = true
-    event(["type": "failed"])
+    failureCategory = "authentication"
+    event(["type": "failed", "category": failureCategory])
   }
 
   func addViews() {
@@ -142,7 +140,9 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
 
   func addViewSucceeded(_ viewName: String, viewInfoName: String) {
     guard let kakaoMap = controller?.getView(viewName) as? KakaoMap else {
-      event(["type": "failed"])
+      failed = true
+      failureCategory = "addView"
+      event(["type": "failed", "category": failureCategory])
       return
     }
     map = kakaoMap
@@ -177,7 +177,8 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
 
   func addViewFailed(_ viewName: String, viewInfoName: String) {
     failed = true
-    event(["type": "failed"])
+    failureCategory = "addView"
+    event(["type": "failed", "category": failureCategory])
   }
 
   func containerDidResized(_ size: CGSize) {

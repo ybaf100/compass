@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 
 import 'core/compass/native_heading_provider.dart';
 import 'core/config/service_configuration.dart';
+import 'core/config/service_initialization.dart';
 import 'core/location/geolocator_location_provider.dart';
 import 'core/network/network_monitor.dart';
 import 'destination/destination_controller.dart';
 import 'destination/destination_store.dart';
 import 'map/kakao_map_provider.dart';
+import 'map/kakao_map_state.dart';
 import 'map/mapbox_offline_map_provider.dart';
 import 'map/map_mode_controller.dart';
 import 'offline/offline_map_controller.dart';
@@ -29,13 +31,17 @@ class DestinationCompassApp extends StatefulWidget {
     required this.roomRepository,
     required this.mapboxConfigured,
     required this.configuration,
+    required this.supabaseInitialization,
+    required this.mapboxInitialization,
   });
 
   final bool mapConfigured;
-  final ValueNotifier<String?> mapError;
+  final ValueNotifier<KakaoFailure?> mapError;
   final RoomRepository? roomRepository;
   final bool mapboxConfigured;
   final ServiceConfiguration configuration;
+  final ServiceInitialization supabaseInitialization;
+  final ServiceInitialization mapboxInitialization;
 
   @override
   State<DestinationCompassApp> createState() => _DestinationCompassAppState();
@@ -63,7 +69,7 @@ class _DestinationCompassAppState extends State<DestinationCompassApp> {
     profileStore: PreferencesProfileStore(),
     locationChanges: _controller,
     currentLocation: () => _controller.location,
-    hasNetwork: () => _controller.hasNetwork,
+    networkState: () => _controller.networkState,
     snapshotStore: PreferencesRoomSnapshotStore(),
   );
   late final NavigationTargetController _navigation =
@@ -115,8 +121,8 @@ class _DestinationCompassAppState extends State<DestinationCompassApp> {
       offlineMaps: _offlineMaps,
       mapMode: _mapMode,
       configuration: widget.configuration,
-      supabaseInitialized: widget.roomRepository != null,
-      mapboxInitialized: widget.mapboxConfigured,
+      supabaseInitialization: widget.supabaseInitialization,
+      mapboxInitialization: widget.mapboxInitialization,
     ),
   );
 }

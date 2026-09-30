@@ -56,6 +56,7 @@ jobs:
           cache: true
       - run: bash tool/bootstrap.sh
       - run: python3 tool/verify_app_identity.py
+      - run: xcodebuild -version
       - name: Build iOS simulator app
         env:
           KAKAO_NATIVE_APP_KEY: ${{ vars.KAKAO_NATIVE_APP_KEY }}
@@ -79,6 +80,12 @@ jobs:
           path: build/ios/passcom-ios-simulator.zip
           if-no-files-found: error
           retention-days: 14
+      - name: Run iPad simulator native plugin lifecycle smoke test
+        run: |
+          simulator_id=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; devices=[d for group in json.load(sys.stdin)["devices"].values() for d in group if "iPad" in d["name"]]; print(devices[0]["udid"])')
+          xcrun simctl boot "$simulator_id"
+          xcrun simctl bootstatus "$simulator_id" -b
+          flutter test integration_test/plugin_registration_test.dart -d "$simulator_id"
 
   ios-sideload:
     runs-on: macos-latest

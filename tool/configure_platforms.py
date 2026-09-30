@@ -50,7 +50,7 @@ if settings.exists():
     contents = settings.read_text()
     contents, count = re.subn(
         r'id\("com\.android\.application"\) version "[^"]+" apply false',
-        'id("com.android.application") version "8.11.1" apply false', contents)
+        'id("com.android.application") version "8.12.1" apply false', contents)
     if count != 1:
         raise RuntimeError('Flutter AGP version anchor not found')
     contents, count = re.subn(
@@ -111,6 +111,15 @@ data['NSLocationWhenInUseUsageDescription'] = (
     '현재 위치에서 목적지까지의 거리와 방향을 표시하는 데 위치 정보가 필요합니다.')
 data['CFBundleDisplayName'] = app_name
 data['CFBundleName'] = app_name
+data['UIApplicationSceneManifest'] = {
+    'UIApplicationSupportsMultipleScenes': False,
+    'UISceneConfigurations': {'UIWindowSceneSessionRoleApplication': [{
+        'UISceneClassName': 'UIWindowScene',
+        'UISceneDelegateClassName': 'FlutterSceneDelegate',
+        'UISceneConfigurationName': 'flutter',
+        'UISceneStoryboardFile': 'Main',
+    }]},
+}
 data['UISupportedInterfaceOrientations'] = [
     'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationLandscapeLeft',
     'UIInterfaceOrientationLandscapeRight']

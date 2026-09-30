@@ -117,7 +117,8 @@ internal class KakaoMapPlatformView(
         try {
             when (call.method) {
                 "status" -> {
-                    result.success(if (map != null) "loaded" else if (failed) "failed" else "initializing")
+                    result.success(mapOf("type" to (if (failed) "failed" else if (map != null) "loaded" else "initializing"),
+                        "category" to "initialization"))
                     return
                 }
                 "overlays" -> {

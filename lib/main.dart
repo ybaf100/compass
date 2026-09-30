@@ -4,6 +4,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
 import 'core/config/service_configuration.dart';
+import 'core/config/service_initialization.dart';
+import 'map/kakao_map_state.dart';
 import 'room/realtime_room_repository.dart';
 import 'room/room_repository.dart';
 
@@ -20,30 +22,29 @@ const configuration = ServiceConfiguration(
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  var mapboxReady = configuration.mapboxConfigured;
-  if (configuration.mapboxConfigured) {
-    try {
+  final mapboxInitialization = await initializeService(
+    configured: configuration.mapboxConfigured, service: 'mapbox',
+    initialize: () async {
       MapboxOptions.setAccessToken(mapboxAccessToken);
-    } catch (_) {
-      mapboxReady = false;
-    }
-  }
-  final mapError = ValueNotifier<String?>(null);
+    });
+  final mapError = ValueNotifier<KakaoFailure?>(null);
   RoomRepository? roomRepository;
-  if (configuration.supabaseConfigured) {
-    try {
+  final supabaseInitialization = await initializeService(
+    configured: configuration.supabaseConfigured, service: 'supabase',
+    classify: (error) => error is AuthException
+        ? InitializationFailure.authentication : classifyInitializationFailure(error),
+    initialize: () async {
       await Supabase.initialize(url: supabaseUrl,
         publishableKey: supabasePublishableKey);
       roomRepository = RealtimeRoomRepository(Supabase.instance.client);
-    } catch (_) {
-      // A backend initialization error does not block personal navigation.
-    }
-  }
+    });
   runApp(DestinationCompassApp(
     mapConfigured: configuration.kakaoConfigured,
     mapError: mapError,
     roomRepository: roomRepository,
-    mapboxConfigured: mapboxReady,
+    mapboxConfigured: mapboxInitialization.state == InitializationState.initialized,
     configuration: configuration,
+    supabaseInitialization: supabaseInitialization,
+    mapboxInitialization: mapboxInitialization,
   ));
 }

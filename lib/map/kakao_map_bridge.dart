@@ -46,11 +46,14 @@ class PlatformKakaoMapBridge implements KakaoMapBridge {
     });
     _onEvent?.call({'type': 'attached'});
     // Native authentication can finish before Flutter attaches its handler.
-    channel.invokeMethod<String>('status').then((status) {
-      if (_channel == channel && (status == 'loaded' || status == 'failed')) {
-        _onEvent?.call({'type': status});
+    channel.invokeMapMethod<String, dynamic>('status').then((status) {
+      if (_channel == channel && status != null &&
+          (status['type'] == 'loaded' || status['type'] == 'failed')) {
+        _onEvent?.call(status);
       }
-    }).catchError((Object _) {});
+    }).catchError((Object _) {
+      if (_channel == channel) _onEvent?.call({'type': 'failed', 'category': 'bridge'});
+    });
   }
 
   @override

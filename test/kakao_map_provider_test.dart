@@ -3,6 +3,7 @@ import 'package:destination_compass/core/location/location_provider.dart';
 import 'package:destination_compass/destination/destination_model.dart';
 import 'package:destination_compass/map/kakao_map_bridge.dart';
 import 'package:destination_compass/map/kakao_map_provider.dart';
+import 'package:destination_compass/map/kakao_map_state.dart';
 import 'package:destination_compass/map/map_provider.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -38,7 +39,8 @@ void main() {
 
   test('native ready/failure, tap, member tap and gesture events', () async {
     final bridge = FakeKakaoBridge();
-    String? error, tappedMember;
+    KakaoFailure? error;
+    String? tappedMember;
     GeoPoint? selected;
     var loaded = 0, gestures = 0;
     final provider = KakaoMapProvider(appKey: 'test-native-key', bridge: bridge,
@@ -59,8 +61,10 @@ void main() {
     expect(gestures, 1);
     expect(bridge.calls.any((call) => call.$1 == 'padding' &&
       call.$2['bottom'] == 250), isTrue);
-    bridge.emit({'type': 'failed'});
-    expect(error, contains('인증'));
+    bridge.emit({'type': 'failed', 'category': 'authentication'});
+    expect(error, KakaoFailure.authentication);
+    bridge.emit({'type': 'failed', 'category': 'addView'});
+    expect(error, KakaoFailure.addView);
     provider.dispose();
     bridge.emit({'type': 'tap', 'latitude': 0, 'longitude': 0});
     expect(selected, const GeoPoint(37.52, 127.1));

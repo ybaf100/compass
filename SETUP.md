@@ -72,14 +72,25 @@ cp config/defines.example.json config/defines.local.json
 
 ## 6. 로컬 실행
 
-Flutter 3.47 이상, Android SDK 36, Python 3가 필요합니다. iOS/iPadOS는 Mac, Xcode와 CocoaPods가 필요합니다. 최초 체크아웃과 플랫폼 재생성 시:
+Flutter 3.47 이상, Android SDK 36, Python 3가 필요합니다. iOS/iPadOS는 Mac, Xcode 26.1.1 이상과 CocoaPods가 필요합니다. connectivity_plus는 7.3.1, Android AGP는 8.12.1, Gradle은 8.14, Kotlin은 2.2.20으로 설정됩니다. 최초 체크아웃과 플랫폼 재생성 시:
 
 ```bash
 bash tool/bootstrap.sh
 flutter run --dart-define-from-file=config/defines.local.json
 ```
 
-앱 상단 톱니바퀴 **서비스 상태**에서 설정 형식을 확인합니다. `설정됨 · 연결 미확인`은 실제 인증 성공을 의미하지 않습니다.
+앱 상단 **설정 및 오프라인 지도 → 서비스 상태**에서 설정 형식과 런타임 상태를 확인합니다. `연결 인터페이스 있음`은 인터넷 연결 성공이 아니며, `초기화 완료`도 Kakao/Supabase/Mapbox의 실제 서버 인증 성공을 보증하지 않습니다.
+
+### iPad 연결/위치 진단
+
+- **Network 확인 중 / 상태 확인 실패**: unknown 상태입니다. Kakao 로드는 계속 시도하며 플러그인 실패를 오프라인으로 확정하지 않습니다.
+- **Network 연결 없음**: 플러그인이 명시적 `none`을 보고했습니다. Wi-Fi OFF→ON 또는 앱 foreground 복귀 시 재조회합니다. 초기/복귀 조회는 0.5초·1.5초 뒤 최대 두 번 재시도합니다.
+- **Kakao 인증/초기화 실패 / timeout**: Network와 별도 문제입니다. Native app key·플랫폼 등록을 확인하고 온라인 재시도를 누르세요.
+- **Location 탐색 중**: 첫 fix가 15초를 넘겨도 탐색을 유지합니다. Wi-Fi 전용 iPad의 위치 수신과 정확도는 기기/환경 영향을 받으므로 실제 수신을 확인하세요. 실제 stream/권한/서비스/플러그인 오류는 별도로 표시합니다.
+- **Supabase 초기화 실패**: `plugin / storage / network / timeout / authentication / configuration / unexpected` 분류를 확인합니다. 원문 예외·자격 증명은 표시하지 않습니다.
+- debug 빌드는 `[passcom]` 이벤트에 인터페이스 enum, 네트워크 상태, SDK 상태, 권한/서비스/첫 fix/오류 분류만 기록합니다. 좌표·키/토큰·사용자 식별자는 기록하지 않습니다. release IPA에서는 이 진단 로그를 출력하지 않습니다.
+
+Flutter 3.47은 UIScene engine 콜백에서 모든 플러그인과 커스텀 bridge를 등록해야 합니다. 부트스트랩은 이 AppDelegate와 Scene Manifest를 유지합니다. 참고: [Flutter UIScene migration](https://docs.flutter.dev/release/breaking-changes/uiscenedelegate), [connectivity_plus 요구사항 및 제한](https://pub.dev/packages/connectivity_plus).
 
 ## 7. GitHub Actions Variables
 

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../core/geo_point.dart';
 import '../core/location/location_provider.dart';
+import '../core/network/network_monitor.dart';
 import '../destination/bearing_engine.dart';
 import 'member_model.dart';
 import 'profile_store.dart';
@@ -18,14 +19,14 @@ class RoomController extends ChangeNotifier {
     required ProfileStore profileStore,
     required Listenable locationChanges,
     required LocationFix? Function() currentLocation,
-    required bool? Function() hasNetwork,
+    required NetworkState Function() networkState,
     RoomSnapshotStore? snapshotStore,
     DateTime Function()? now,
   }) : _repository = repository,
        _profileStore = profileStore,
        _locationChanges = locationChanges,
        _currentLocation = currentLocation,
-       _hasNetwork = hasNetwork,
+       _networkState = networkState,
        _snapshotStore = snapshotStore,
        _now = now ?? DateTime.now;
 
@@ -40,7 +41,7 @@ class RoomController extends ChangeNotifier {
   final ProfileStore _profileStore;
   final Listenable _locationChanges;
   final LocationFix? Function() _currentLocation;
-  final bool? Function() _hasNetwork;
+  final NetworkState Function() _networkState;
   final RoomSnapshotStore? _snapshotStore;
   Future<void> _cacheWrites = Future<void>.value();
   final DateTime Function() _now;
@@ -55,7 +56,7 @@ class RoomController extends ChangeNotifier {
   bool foreground = true;
   bool _disposed = false;
   bool _started = false;
-  bool? _lastNetwork;
+  NetworkState _lastNetwork = NetworkState.unknown;
   int _generation = 0;
   DateTime? _lastUploadAt;
   DateTime? _lastSuccessfulUploadAt;
@@ -68,11 +69,11 @@ class RoomController extends ChangeNotifier {
   String? _pendingLeave;
 
   bool get configured => _repository != null;
-  bool? get hasNetwork => _hasNetwork();
+  NetworkState get networkState => _networkState();
   bool get showingLastSnapshot => room != null &&
-      (_hasNetwork() == false || error != null);
+      (_networkState() == NetworkState.unavailable || error != null);
   bool get sharingLocation => room != null && foreground &&
-      _hasNetwork() != false &&
+      _networkState() != NetworkState.unavailable &&
       _lastSuccessfulUploadAt != null &&
       currentTime.difference(_lastSuccessfulUploadAt!) < staleAfter;
   DateTime get currentTime => _now().toUtc();
@@ -100,7 +101,7 @@ class RoomController extends ChangeNotifier {
     _pendingLeave = await _profileStore.loadPendingLeave();
     final savedRoom = await _profileStore.loadRoomId();
     if (_disposed) return;
-    _lastNetwork = _hasNetwork();
+    _lastNetwork = _networkState();
     userId = _repository?.userId;
     if (savedRoom != null && _pendingLeave == null && _snapshotStore != null) {
       final cached = await _snapshotStore.load();
@@ -112,7 +113,7 @@ class RoomController extends ChangeNotifier {
       }
     }
     _notify();
-    if (_repository == null || _hasNetwork() == false) return;
+    if (_repository == null || _networkState() == NetworkState.unavailable) return;
     try {
       if (savedRoom != null || _pendingLeave != null) {
         userId = await _repository.ensureIdentity();
@@ -259,8 +260,8 @@ class RoomController extends ChangeNotifier {
   }
 
   void _onLocationChanged() {
-    final network = _hasNetwork();
-    if (_lastNetwork == false && network == true && _repository != null) {
+    final network = _networkState();
+    if (_lastNetwork != NetworkState.available && network == NetworkState.available && _repository != null) {
       unawaited(reconnect());
     }
     _lastNetwork = network;
@@ -271,7 +272,7 @@ class RoomController extends ChangeNotifier {
     final id = room?.id;
     final fix = _currentLocation();
     if (id == null || fix == null || !foreground || _uploading ||
-        _hasNetwork() == false || !fix.point.isValid ||
+        _networkState() == NetworkState.unavailable || !fix.point.isValid ||
         fix.accuracyMeters > maximumUploadAccuracyMeters ||
         fix.accuracyMeters < 0) {
       return;
@@ -307,14 +308,14 @@ class RoomController extends ChangeNotifier {
   Future<void> sendPing(GeoPoint point) async {
     final id = room?.id;
     if (id == null) throw StateError('방에 참가한 후 Ping을 보낼 수 있습니다.');
-    if (_hasNetwork() == false) throw StateError('오프라인에서는 Ping을 보낼 수 없습니다.');
+    if (_networkState() == NetworkState.unavailable) throw StateError('오프라인에서는 Ping을 보낼 수 없습니다.');
     await _repository!.sendPing(id, point);
   }
 
   Future<void> setSharedDestination(GeoPoint point, String? name) async {
     final id = room?.id;
     if (id == null) throw StateError('방에 참가한 후 공유할 수 있습니다.');
-    if (_hasNetwork() == false) throw StateError('오프라인에서는 모두의 목적지를 변경할 수 없습니다.');
+    if (_networkState() == NetworkState.unavailable) throw StateError('오프라인에서는 모두의 목적지를 변경할 수 없습니다.');
     await _repository!.setSharedDestination(id, point, name);
   }
 

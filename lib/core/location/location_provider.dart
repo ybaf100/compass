@@ -7,6 +7,19 @@ enum LocationAccess {
   serviceDisabled,
 }
 
+enum LocationPrecision { unknown, precise, reduced }
+enum LocationFailure { permissionDenied, serviceDisabled, plugin, timeout,
+  accessCheck, stream }
+
+class LocationProviderException implements Exception {
+  const LocationProviderException(this.category);
+  final LocationFailure category;
+}
+
+abstract class LocationDiagnosticsProvider {
+  LocationPrecision get precision;
+}
+
 class LocationFix {
   const LocationFix({
     required this.point,

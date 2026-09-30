@@ -4,6 +4,8 @@ import '../core/geo_point.dart';
 import '../core/location/location_provider.dart';
 import '../destination/destination_model.dart';
 import 'kakao_map_bridge.dart';
+import 'kakao_map_state.dart';
+import '../core/diagnostics.dart';
 import 'map_provider.dart';
 
 /// Online map adapter. All native traffic is batched as stable-ID overlays.
@@ -12,7 +14,7 @@ class KakaoMapProvider implements MapProvider, CameraAwareMapProvider {
       : _bridge = bridge ?? PlatformKakaoMapBridge();
 
   final String appKey;
-  final ValueChanged<String>? onFailure;
+  final ValueChanged<KakaoFailure>? onFailure;
   final KakaoMapBridge _bridge;
   Destination? _destination;
   GeoPoint? _candidate;
@@ -72,7 +74,14 @@ class KakaoMapProvider implements MapProvider, CameraAwareMapProvider {
           _loaded?.call();
         case 'failed':
           _ready = false;
-          onFailure?.call('카카오 지도 인증 또는 초기화에 실패했습니다. Native app key와 플랫폼 등록을 확인하세요.');
+          final reason = switch (event['category']) {
+            'authentication' => KakaoFailure.authentication,
+            'addView' => KakaoFailure.addView,
+            'bridge' => KakaoFailure.bridge,
+            _ => KakaoFailure.initialization,
+          };
+          diagnosticEvent('kakao.nativeFailure', reason.name);
+          onFailure?.call(reason);
         case 'tap':
           final point = _point(event);
           if (point != null) _picked?.call(point);

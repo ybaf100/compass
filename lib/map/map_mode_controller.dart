@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../core/geo_point.dart';
+import '../core/network/network_monitor.dart';
+import '../core/diagnostics.dart';
 import '../offline/offline_map_controller.dart';
+import 'kakao_map_state.dart';
 
 enum MapMode { onlineKakao, offlineMapbox, mapUnavailable }
 
@@ -17,6 +20,7 @@ class MapModeController extends ChangeNotifier {
         _recoveryDelay = recoveryDelay {
     _offlineMaps.addListener(_reevaluate);
     mode = kakaoConfigured ? MapMode.onlineKakao : MapMode.mapUnavailable;
+    kakaoState = kakaoConfigured ? KakaoState.initializing : KakaoState.notConfigured;
   }
 
   final bool kakaoConfigured;
@@ -24,40 +28,59 @@ class MapModeController extends ChangeNotifier {
   final Duration _switchDelay;
   final Duration _recoveryDelay;
   late MapMode mode;
-  bool? connected;
+  NetworkState networkState = NetworkState.unknown;
   GeoPoint? currentPosition;
-  bool kakaoFailed = false;
+  late KakaoState kakaoState;
+  KakaoFailure? failure;
+  bool get kakaoFailed => failure != null;
+  int attempt = 0;
   Timer? _pending;
   MapMode? _pendingTarget;
   bool _disposed = false;
 
-  void update({bool? connected, GeoPoint? position}) {
-    if (connected != null && connected != this.connected) {
-      if (this.connected == false && connected) kakaoFailed = false;
-      this.connected = connected;
+  void update({NetworkState? networkState, GeoPoint? position}) {
+    var recovering = false;
+    if (networkState != null && networkState != this.networkState) {
+      recovering = networkState == NetworkState.available && kakaoFailed;
+      this.networkState = networkState;
     }
     if (position != null) currentPosition = position;
-    _reevaluate();
+    if (recovering) {
+      retryKakao();
+    } else {
+      _reevaluate();
+    }
   }
 
   void kakaoLoaded() {
-    kakaoFailed = false;
+    failure = null;
+    kakaoState = KakaoState.loaded;
+    diagnosticEvent('kakao', 'loaded');
     _reevaluate();
+    if (!_disposed) notifyListeners();
   }
 
-  void kakaoFailure() {
-    if (kakaoFailed) return;
-    kakaoFailed = true;
+  void kakaoFailure([KakaoFailure reason = KakaoFailure.initialization]) {
+    if (_disposed || failure == reason) return;
+    failure = reason;
+    kakaoState = reason == KakaoFailure.timeout ? KakaoState.timedOut : KakaoState.failed;
+    diagnosticEvent('kakao.failure', reason.name);
     _reevaluate();
+    notifyListeners();
   }
 
   void retryKakao() {
-    kakaoFailed = false;
+    if (_disposed || !kakaoConfigured || networkState == NetworkState.unavailable) return;
+    failure = null;
+    kakaoState = KakaoState.initializing;
+    attempt++;
+    diagnosticEvent('kakao', 'retry');
     _reevaluate();
+    notifyListeners();
   }
 
   MapMode get desired {
-    if (kakaoConfigured && connected != false && !kakaoFailed) {
+    if (kakaoConfigured && networkState != NetworkState.unavailable && !kakaoFailed) {
       return MapMode.onlineKakao;
     }
     if (_offlineMaps.configured &&

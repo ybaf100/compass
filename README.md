@@ -47,7 +47,7 @@ flutter run \
 
 Mapbox의 **public** access token (`pk.`)을 `MAPBOX_ACCESS_TOKEN` dart-define으로 주입합니다. secret token은 모바일 앱에 넣지 마세요. 토큰이 없으면 오프라인 지도만 비활성화되고 카카오 지도·나침반·친구방은 계속 사용할 수 있습니다. 이 프로젝트는 iOS/iPadOS 15 이상과 Android API 24 이상을 대상으로 합니다.
 
-Android 부트스트랩은 네이티브 Kakao Maps SDK v2와 Mapbox SDK에 AGP 8.11.1, Gradle 8.14, Kotlin 2.2.20을 생성된 프로젝트에 지정합니다.
+Android 부트스트랩은 네이티브 Kakao Maps SDK v2와 Mapbox SDK에 AGP 8.12.1, Gradle 8.14, Kotlin 2.2.20을 생성된 프로젝트에 지정합니다. `connectivity_plus 7.3.1`을 사용하며 iOS 빌드에는 Xcode 26.1.1 이상이 필요합니다.
 
 온라인일 때 상단 **설정 및 오프라인 지도 → 오프라인 지도**에서 GPS 현재 위치 주변 5/20/50 km를 선택하고 용량을 추정한 뒤 내려받습니다. 실제 용량은 지역·줌·Mapbox 리소스에 따라 다릅니다. Mapbox 공식 Style Pack(`MAPBOX_STREETS`)과 Tile Region API를 사용하며 줌 0–15의 64각형 원형 영역을 저장합니다. 다운로드 중 진행률과 실패/재시도, 지역별 삭제 및 다운로드 용량 합계를 표시합니다. 겹친 타일과 공유 Style Pack 때문에 합계는 실제 앱의 물리적 저장 공간과 다를 수 있습니다. 타일 지역을 지워도 공유 Style Pack이나 다른 지역의 타일은 제거하지 않습니다.
 
@@ -92,6 +92,10 @@ flutter build ios --simulator --debug --dart-define=KAKAO_NATIVE_APP_KEY=발급�
 방위각은 진북 기준입니다. Android는 GPS 좌표로 자기편각을 보정하고, iOS는 Core Location trueHeading을 우선합니다. 보정할 GPS가 없거나 trueHeading이 제공되지 않으면 자기북 기준임을 화면에 알립니다. 지도 네트워크 오류 중에도 저장된 목적지와 새 GPS/센서 값은 별도로 유지됩니다.
 
 온라인 지도는 공식 Kakao Maps Android v2 `2.15.2` 및 iOS v2 `2.12.19`를 네이티브 PlatformView로 표시합니다. Dart의 `KakaoMapProvider`와 별도 브리지 바깥에는 SDK 타입이 노출되지 않습니다. 오프라인 지도는 Mapbox입니다. 네트워크 연결 유형은 실제 인터넷 연결을 보증하지 않으므로 지도 로딩 시간 초과 및 인증 오류도 따로 표시합니다.
+
+네트워크 상태는 `unknown / available / unavailable`입니다. 플러그인 조회·스트림 예외와 빈 결과는 unknown이며, 명시적 `none`만 unavailable로 처리합니다. unknown도 Kakao 지도 로드를 시도합니다. Wi-Fi 복구와 앱 resume에서 상태를 재조회하고, 초기/복귀 조회는 필요할 때 0.5초·1.5초 뒤 최대 두 번 재확인합니다. 최신 스트림 이벤트는 오래된 비동기 조회 결과보다 우선합니다. Kakao 인증/초기화 실패와 18초 로드 timeout은 별도 상태이며, 기존 오프라인 전환 지연과 카메라 보존을 유지합니다.
+
+iOS는 UIScene의 `didInitializeImplicitFlutterEngine`에서 플러그인·Heading 채널·Kakao PlatformView를 등록합니다. CI는 iPad 시뮬레이터에서 connectivity, 위치 권한 조회, SharedPreferences, Heading 채널, Kakao PlatformView의 실제 등록까지 확인합니다. 위치 권한 허용 후 첫 GPS fix가 15초 늦어져도 스트림을 끊지 않고 탐색/재시도 상태를 유지합니다. 서비스 상태는 네트워크·SDK·위치 오류를 분리하고 키/좌표/개인 식별자를 표시하지 않습니다.
 
 ## 검증
 
