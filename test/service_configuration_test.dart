@@ -53,6 +53,8 @@ void main() {
     expect(find.text('초기화 중 · 지도 연결 확인 필요'), findsOneWidget);
     expect(find.text('미입력'), findsOneWidget);
     expect(find.text('형식 오류'), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pumpAndSettle();
     expect(find.text(ServiceConfiguration.appIdentifier), findsNWidgets(2));
     expect(find.textContaining('pk.test'), findsNothing);
     expect(find.textContaining('sb_publishable_test'), findsNothing);

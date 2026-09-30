@@ -528,16 +528,17 @@ class _MapScreenState extends State<MapScreen>
       ? '카카오 지도 응답이 없습니다.' : '카카오 지도 연결에 실패했습니다.';
 
   String get _unavailableMessage {
-    if (widget.controller.networkState == NetworkState.unavailable) {
+    final network = widget.mapMode?.networkState ?? widget.controller.networkState;
+    if (network == NetworkState.unavailable) {
       return '오프라인 · 이 지역의 지도가 없습니다.';
     }
     final failure = widget.mapMode?.failure ?? widget.mapError.value;
     if (failure != null) return _failureMessage(failure);
     if (!widget.mapConfigured) return '카카오 지도 Native app key가 설정되지 않았습니다.';
-    if (widget.controller.networkState == NetworkState.unknown) {
+    if (network == NetworkState.unknown) {
       return '연결 상태를 확인하는 중입니다.';
     }
-    return '카카오 지도 연결에 실패했습니다.';
+    return '온라인 지도를 다시 연결하는 중입니다.';
   }
 
   Widget _mapNotice(String title, String detail, {VoidCallback? onRetry}) =>
