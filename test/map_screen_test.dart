@@ -146,6 +146,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('서비스 상태'));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Android package'), 250);
     expect(find.text('Android package'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());

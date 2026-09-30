@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 /// SDK-independent policy used by the native platform view and executable tests.
 /// No app key, coordinates or SDK objects are retained here.

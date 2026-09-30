@@ -52,7 +52,9 @@ void main() {
         supabase: ConfigurationStatus.missing,
         mapbox: ConfigurationStatus.invalid))));
     expect(find.text('초기화 중 · 지도 연결 확인 필요'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('미입력'), 250);
     expect(find.text('미입력'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('형식 오류'), 250);
     expect(find.text('형식 오류'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('Expected Bundle ID'), 250);
     await tester.pumpAndSettle();
@@ -111,6 +113,7 @@ void main() {
           failure: InitializationFailure.plugin)))));
     expect(find.text('상태 확인 실패 · plugin'), findsOneWidget);
     expect(find.text('timeout · 카카오 지도 응답 없음'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('초기화 실패 · plugin'), 250);
     expect(find.text('초기화 실패 · plugin'), findsOneWidget);
     expect(find.text('연결 없음'), findsNothing);
     expect(find.textContaining('do-not-expose'), findsNothing);
