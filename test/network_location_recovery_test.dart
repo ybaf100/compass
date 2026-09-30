@@ -54,7 +54,7 @@ class _Store implements DestinationStore {
   Future<void> save(Destination? destination) async {}
 }
 
-DestinationController controllerFor(_Network network, _Location location) =>
+DestinationController _controllerFor(_Network network, _Location location) =>
     DestinationController(networkMonitor: network, locationProvider: location,
       headingProvider: _Heading(), store: _Store());
 
@@ -95,7 +95,7 @@ void main() {
 
   testWidgets('initial unknown and controller check exception stay unknown', (tester) async {
     final network = _Network()..check = () async => throw MissingPluginException();
-    final location = _Location(); final controller = controllerFor(network, location);
+    final location = _Location(); final controller = _controllerFor(network, location);
     expect(controller.networkState, NetworkState.unknown);
     await controller.start(); await tester.pump();
     expect(controller.networkState, NetworkState.unknown);
@@ -105,7 +105,7 @@ void main() {
 
   testWidgets('controller stream error becomes unknown and none/Wi-Fi recover', (tester) async {
     final network = _Network(); final location = _Location();
-    final controller = controllerFor(network, location);
+    final controller = _controllerFor(network, location);
     await controller.start(); await tester.pump();
     network.events.addError(MissingPluginException()); await tester.pump();
     expect(controller.networkState, NetworkState.unknown);
@@ -118,7 +118,7 @@ void main() {
 
   testWidgets('foreground recheck clears old offline; retries are bounded', (tester) async {
     final network = _Network()..value = const NetworkStatus(NetworkState.unavailable);
-    final location = _Location(); final controller = controllerFor(network, location);
+    final location = _Location(); final controller = _controllerFor(network, location);
     await controller.start(); await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 1500));
@@ -135,7 +135,7 @@ void main() {
   testWidgets('late connectivity query cannot overwrite a newer Wi-Fi event', (tester) async {
     final pending = Completer<NetworkStatus>();
     final network = _Network()..check = () => pending.future;
-    final location = _Location(); final controller = controllerFor(network, location);
+    final location = _Location(); final controller = _controllerFor(network, location);
     await controller.start();
     network.events.add(const NetworkStatus(NetworkState.available)); await tester.pump();
     pending.complete(const NetworkStatus(NetworkState.unavailable)); await tester.pump();
@@ -145,7 +145,7 @@ void main() {
 
   testWidgets('location fix after 15 seconds is still accepted without offline implication', (tester) async {
     final network = _Network(); final location = _Location()..access = LocationAccess.granted;
-    final controller = controllerFor(network, location);
+    final controller = _controllerFor(network, location);
     await controller.start();
     await tester.pump(const Duration(seconds: 16));
     expect(controller.locationState, LocationState.acquiring);
@@ -161,7 +161,7 @@ void main() {
 
   testWidgets('actual location stream error is distinct from delayed first fix', (tester) async {
     final network = _Network(); final location = _Location()..access = LocationAccess.granted;
-    final controller = controllerFor(network, location);
+    final controller = _controllerFor(network, location);
     await controller.start();
     location.events.addError(StateError('private sensor error')); await tester.pump();
     expect(controller.locationState, LocationState.unavailable);
@@ -172,7 +172,7 @@ void main() {
 
   testWidgets('denied permission does not start location stream or first-fix timeout', (tester) async {
     final network = _Network(); final location = _Location();
-    final controller = controllerFor(network, location);
+    final controller = _controllerFor(network, location);
     await controller.start();
     expect(controller.locationState, LocationState.permissionDenied);
     expect(location.events.hasListener, isFalse);

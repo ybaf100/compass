@@ -130,9 +130,13 @@ class _MapScreenState extends State<MapScreen>
   Future<void> _resume() async {
     await widget.controller.onAppResume();
     if (!mounted || !widget.mapConfigured ||
-        widget.controller.networkState == NetworkState.unavailable) return;
+        widget.controller.networkState == NetworkState.unavailable) {
+      return;
+    }
     if (widget.mapError.value != null || widget.mapMode?.kakaoFailed == true ||
-        _mapTimedOut || !_mapLoaded) _retryMap();
+        _mapTimedOut || !_mapLoaded) {
+      _retryMap();
+    }
   }
 
   void _onControllerChanged() {
@@ -492,7 +496,7 @@ class _MapScreenState extends State<MapScreen>
           ),
         ),
       ),
-      ValueListenableBuilder<String?>(
+      ValueListenableBuilder<KakaoFailure?>(
         valueListenable: widget.mapError,
         builder: (context, authError, _) {
           final message = (_mode == MapMode.onlineKakao && authError != null
