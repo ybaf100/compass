@@ -33,7 +33,7 @@ final class KakaoEngineLifecycle {
     self.bounds = bounds
   }
 
-  var hasSize: Bool { bounds.width > 0 && bounds.height > 0 }
+  var hasSize: Bool { bounds.size.width > 0 && bounds.size.height > 0 }
   var terminalFailure: Bool { failed && retryDelay == nil }
 
   func sdkDidInitialize() {

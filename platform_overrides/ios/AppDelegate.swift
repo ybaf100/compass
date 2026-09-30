@@ -172,8 +172,8 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
      "authErrorCode": lifecycle.authErrorCode.map { $0 as Any } ?? NSNull(),
      "retryCount": lifecycle.retryCount,
      "retryPending": lifecycle.retryDelay != nil,
-     "containerWidth": Double(lifecycle.bounds.width),
-     "containerHeight": Double(lifecycle.bounds.height)]
+     "containerWidth": Double(lifecycle.bounds.size.width),
+     "containerHeight": Double(lifecycle.bounds.size.height)]
   }
 
   private func emitDiagnostics() {
