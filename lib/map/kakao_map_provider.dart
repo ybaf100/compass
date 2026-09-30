@@ -5,17 +5,30 @@ import '../core/location/location_provider.dart';
 import '../destination/destination_model.dart';
 import 'kakao_map_bridge.dart';
 import 'kakao_map_state.dart';
+import 'kakao_diagnostics.dart';
 import '../core/diagnostics.dart';
 import 'map_provider.dart';
 
 /// Online map adapter. All native traffic is batched as stable-ID overlays.
 class KakaoMapProvider implements MapProvider, CameraAwareMapProvider {
   KakaoMapProvider({required this.appKey, this.onFailure, KakaoMapBridge? bridge})
-      : _bridge = bridge ?? PlatformKakaoMapBridge();
+      : _bridge = bridge ?? PlatformKakaoMapBridge(),
+        diagnostics = ValueNotifier(KakaoDiagnostics(
+          keyPresent: appKey.trim().isNotEmpty));
 
   final String appKey;
   final ValueChanged<KakaoFailure>? onFailure;
   final KakaoMapBridge _bridge;
+  final ValueNotifier<KakaoDiagnostics> diagnostics;
+
+  Future<void> refreshRuntimeIdentity() async {
+    try {
+      final id = await _bridge.runtimeBundleIdentifier();
+      if (!_disposed) diagnostics.value = diagnostics.value.withRuntimeBundleId(id);
+    } catch (_) {
+      diagnosticEvent('runtime.bundleIdentifier', 'unavailable');
+    }
+  }
   Destination? _destination;
   GeoPoint? _candidate;
   LocationFix? _location;
@@ -56,6 +69,11 @@ class KakaoMapProvider implements MapProvider, CameraAwareMapProvider {
     final generation = _generation;
     return _bridge.build(appKey: appKey, onEvent: (event) {
       if (_disposed || generation != _generation) return;
+      if (event.containsKey('stage') || event.containsKey('runtimeBundleId')) {
+        diagnostics.value = diagnostics.value.apply(event);
+        final stage = diagnostics.value.stage;
+        if (stage != null) diagnosticEvent('kakao.stage', stage.name);
+      }
       switch (event['type']) {
         case 'attached':
           _attached = true;
@@ -228,5 +246,6 @@ class KakaoMapProvider implements MapProvider, CameraAwareMapProvider {
   void dispose() {
     _disposed = true;
     reset();
+    diagnostics.dispose();
   }
 }

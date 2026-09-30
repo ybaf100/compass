@@ -23,6 +23,12 @@ import UIKit
     methods.setMethodCallHandler { [weak self] call, result in
       self?.headingBridge.handle(call, result: result)
     }
+    let runtime = FlutterMethodChannel(name: "app.destination_compass/runtime",
+      binaryMessenger: messenger)
+    runtime.setMethodCallHandler { call, result in
+      if call.method == "bundleIdentifier" { result(Bundle.main.bundleIdentifier) }
+      else { result(FlutterMethodNotImplemented) }
+    }
     registrar.register(KakaoMapViewFactory(messenger: messenger),
       withId: "app.destination_compass/kakao_map")
   }
@@ -44,9 +50,32 @@ private final class KakaoMapViewFactory: NSObject, FlutterPlatformViewFactory {
   }
 }
 
+/// Flutter may create a 0x0 view. Observe UIKit layout independently of the SDK
+/// so engine activation is not required to discover the first nonzero bounds.
+private final class KakaoMapHostView: UIView {
+  let mapContainer: KMViewContainer
+  var onLayout: (() -> Void)?
+
+  override init(frame: CGRect) {
+    mapContainer = KMViewContainer(frame: CGRect(origin: .zero, size: frame.size))
+    super.init(frame: frame)
+    addSubview(mapContainer)
+  }
+
+  required init?(coder: NSCoder) { fatalError("Programmatic platform view only") }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    mapContainer.frame = bounds
+    onLayout?()
+  }
+}
+
 private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
     MapControllerDelegate, KakaoMapEventDelegate {
+  private let host: KakaoMapHostView
   private let container: KMViewContainer
+  private let lifecycle: KakaoEngineLifecycle
   private let channel: FlutterMethodChannel
   private var controller: KMController?
   private var map: KakaoMap?
@@ -57,43 +86,72 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
   private var pendingCamera: [String: Any]?
   private var bottomPadding: CGFloat = 0
   private var disposed = false
-  private var failed = false
   private var failureCategory = "initialization"
+  private var authRetry: DispatchWorkItem?
   private var foregroundObserver: NSObjectProtocol?
   private var backgroundObserver: NSObjectProtocol?
 
   init(frame: CGRect, id: Int64, key: String, messenger: FlutterBinaryMessenger) {
-    container = KMViewContainer(frame: frame)
+    let mapHost = KakaoMapHostView(frame: frame)
+    host = mapHost
+    container = mapHost.mapContainer
+    lifecycle = KakaoEngineLifecycle(
+      keyPresent: !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      foreground: UIApplication.shared.applicationState == .active,
+      bounds: mapHost.mapContainer.bounds)
     channel = FlutterMethodChannel(name: "app.destination_compass/kakao_map_\(id)",
                                    binaryMessenger: messenger)
     super.init()
+    lifecycle.onStage = { [weak self] stage in
+      #if DEBUG
+      print("[passcom] kakao.stage: \(stage.rawValue)")
+      #endif
+      self?.emitDiagnostics()
+    }
+    host.onLayout = { [weak self] in self?.updateLayout() }
     channel.setMethodCallHandler { [weak self] call, result in
       self?.handle(call, result: result)
     }
-    guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-      failed = true
-      event(["type": "failed", "category": failureCategory])
+    emitDiagnostics()
+    guard lifecycle.keyPresent else {
+      lifecycle.fail()
+      emitFailure()
       return
     }
     SDKInitializer.InitSDK(appKey: key)
+    lifecycle.sdkDidInitialize()
     controller = KMController(viewContainer: container)
+    guard controller != nil else {
+      lifecycle.fail()
+      emitFailure()
+      return
+    }
     controller?.delegate = self
     foregroundObserver = NotificationCenter.default.addObserver(
       forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-      self?.controller?.activateEngine()
+      guard let self, !self.disposed else { return }
+      self.lifecycle.setForeground(true)
+      self.scheduleAuthRetry()
+      self.activateIfAllowed()
     }
     backgroundObserver = NotificationCenter.default.addObserver(
       forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-      self?.controller?.pauseEngine()
+      guard let self else { return }
+      self.lifecycle.setForeground(false)
+      self.authRetry?.cancel()
+      self.authRetry = nil
+      self.controller?.pauseEngine()
     }
-    controller?.prepareEngine()
-    controller?.activateEngine()
+    prepareEngine()
   }
 
-  func view() -> UIView { container }
+  func view() -> UIView { host }
 
   deinit {
     disposed = true
+    authRetry?.cancel()
+    host.onLayout = nil
+    lifecycle.onStage = nil
     if let foregroundObserver { NotificationCenter.default.removeObserver(foregroundObserver) }
     if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver) }
     channel.setMethodCallHandler(nil)
@@ -105,11 +163,85 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
     if !disposed { channel.invokeMethod("event", arguments: payload) }
   }
 
+  private func diagnostics() -> [String: Any] {
+    ["stage": lifecycle.stage.rawValue,
+     "stages": lifecycle.stages.map { $0.rawValue },
+     "keyPresent": lifecycle.keyPresent,
+     "sdkInitialized": lifecycle.sdkInitialized,
+     "runtimeBundleId": (Bundle.main.bundleIdentifier as Any?) ?? NSNull(),
+     "authErrorCode": lifecycle.authErrorCode.map { $0 as Any } ?? NSNull(),
+     "retryCount": lifecycle.retryCount,
+     "retryPending": lifecycle.retryDelay != nil,
+     "containerWidth": Double(lifecycle.bounds.width),
+     "containerHeight": Double(lifecycle.bounds.height)]
+  }
+
+  private func emitDiagnostics() {
+    var payload = diagnostics()
+    payload["type"] = "diagnostics"
+    event(payload)
+  }
+
+  private func emitFailure() {
+    var payload = diagnostics()
+    payload["type"] = "failed"
+    payload["category"] = failureCategory
+    event(payload)
+  }
+
+  private func prepareEngine() {
+    guard !disposed else { return }
+    lifecycle.prepareRequested()
+    if controller?.prepareEngine() == false {
+      failureCategory = "initialization"
+      lifecycle.fail()
+      emitFailure()
+    }
+  }
+
+  private func activateIfAllowed() {
+    guard !disposed else { return }
+    if lifecycle.requestActivation() { controller?.activateEngine() }
+    addViewIfAllowed()
+    announceLoadedIfAllowed()
+  }
+
+  private func scheduleAuthRetry() {
+    guard !disposed, lifecycle.foreground,
+      let delay = lifecycle.retryDelay, authRetry == nil else { return }
+    let work = DispatchWorkItem { [weak self] in
+      guard let self, !self.disposed else { return }
+      self.authRetry = nil
+      guard self.lifecycle.foreground, self.lifecycle.retryDelay != nil else { return }
+      self.prepareEngine()
+    }
+    authRetry = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+  }
+
+  private func updateLayout() {
+    guard !disposed else { return }
+    lifecycle.resize(container.bounds)
+    map?.viewRect = container.bounds
+    activateIfAllowed()
+    emitDiagnostics()
+  }
+
+  private func announceLoadedIfAllowed() {
+    if lifecycle.markLoaded() {
+      var payload = diagnostics()
+      payload["type"] = "loaded"
+      event(payload)
+    }
+  }
+
   private func handle(_ call: FlutterMethodCall, result: FlutterResult) {
     switch call.method {
     case "status":
-      result(["type": failed ? "failed" : map != nil ? "loaded" : "initializing",
-              "category": failureCategory])
+      var status = diagnostics()
+      status["type"] = lifecycle.terminalFailure ? "failed" : lifecycle.loaded ? "loaded" : "initializing"
+      status["category"] = failureCategory
+      result(status)
     case "overlays":
       markers = ((call.arguments as? [String: Any])?["markers"] as? [[String: Any]]) ?? []
       applyMarkers()
@@ -126,27 +258,54 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
     }
   }
 
+  func authenticationSucceeded() {
+    guard !disposed else { return }
+    authRetry?.cancel()
+    authRetry = nil
+    lifecycle.authenticationSucceeded()
+    activateIfAllowed()
+  }
+
   func authenticationFailed(_ errorCode: Int, desc: String) {
-    failed = true
+    guard !disposed else { return }
+    authRetry?.cancel()
+    authRetry = nil
     failureCategory = "authentication"
-    event(["type": "failed", "category": failureCategory])
+    // Do not forward/log desc: it can contain credentials or request details.
+    map = nil
+    layer = nil
+    pois.removeAll()
+    kinds.removeAll()
+    lifecycle.authenticationFailed(errorCode)
+    #if DEBUG
+    print("[passcom] kakao.authErrorCode: \(errorCode)")
+    #endif
+    if lifecycle.terminalFailure { emitFailure() }
+    else { scheduleAuthRetry() }
   }
 
   func addViews() {
+    guard !disposed else { return }
+    lifecycle.addViews()
+    addViewIfAllowed()
+  }
+
+  private func addViewIfAllowed() {
+    guard lifecycle.requestView() else { return }
     let info = MapviewInfo(viewName: "compassMap", viewInfoName: "map",
       defaultPosition: MapPoint(longitude: 126.979, latitude: 37.5666), defaultLevel: 14)
     controller?.addView(info)
   }
 
   func addViewSucceeded(_ viewName: String, viewInfoName: String) {
+    guard !disposed else { return }
     guard let kakaoMap = controller?.getView(viewName) as? KakaoMap else {
-      failed = true
       failureCategory = "addView"
-      event(["type": "failed", "category": failureCategory])
+      lifecycle.fail()
+      emitFailure()
       return
     }
     map = kakaoMap
-    failed = false
     kakaoMap.eventDelegate = self
     kakaoMap.viewRect = container.bounds
     kakaoMap.keepLevelOnResize = true
@@ -172,17 +331,19 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
     applyMarkers()
     if let pendingCamera { applyCamera(pendingCamera) }
     emitCamera()
-    event(["type": "loaded"])
+    lifecycle.addViewSucceeded(currentBounds: container.bounds)
+    announceLoadedIfAllowed()
   }
 
   func addViewFailed(_ viewName: String, viewInfoName: String) {
-    failed = true
+    guard !disposed else { return }
     failureCategory = "addView"
-    event(["type": "failed", "category": failureCategory])
+    lifecycle.fail()
+    emitFailure()
   }
 
   func containerDidResized(_ size: CGSize) {
-    map?.viewRect = CGRect(origin: .zero, size: size)
+    updateLayout()
   }
 
   private func iconImage(_ color: UIColor) -> UIImage {

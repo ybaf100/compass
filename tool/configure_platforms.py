@@ -167,6 +167,14 @@ for configuration in ('Debug', 'Release'):
     if pods_include not in contents:
         xcconfig.write_text(pods_include + '\n' + contents)
 
+# Keep one generated AppDelegate compilation unit, independent of Flutter's
+# Xcode group format. Bootstrap recopies the bridge before composing the policy.
+app_delegate = root / 'ios/Runner/AppDelegate.swift'
+policy = root / 'platform_overrides/ios/KakaoEngineLifecycle.swift'
+if app_delegate.exists():
+    bridge = (root / 'platform_overrides/ios/AppDelegate.swift').read_text()
+    app_delegate.write_text(bridge + '\n' + policy.read_text())
+
 project = root / 'ios/Runner.xcodeproj/project.pbxproj'
 if project.exists():
     text = project.read_text()

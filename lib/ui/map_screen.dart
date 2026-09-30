@@ -11,6 +11,7 @@ import '../destination/bearing_engine.dart';
 import '../map/map_provider.dart';
 import '../map/map_mode_controller.dart';
 import '../map/kakao_map_state.dart';
+import '../map/kakao_diagnostics.dart';
 import '../map/member_marker_motion.dart';
 import '../offline/offline_map_controller.dart';
 import '../navigation/navigation_target.dart';
@@ -35,6 +36,7 @@ class MapScreen extends StatefulWidget {
     this.configuration,
     this.supabaseInitialization = const ServiceInitialization.initialized(),
     this.mapboxInitialization = const ServiceInitialization.initialized(),
+    this.kakaoDiagnostics,
   });
 
   final DestinationController controller;
@@ -49,6 +51,7 @@ class MapScreen extends StatefulWidget {
   final ServiceConfiguration? configuration;
   final ServiceInitialization supabaseInitialization;
   final ServiceInitialization mapboxInitialization;
+  final ValueListenable<KakaoDiagnostics>? kakaoDiagnostics;
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -130,7 +133,9 @@ class _MapScreenState extends State<MapScreen>
   Future<void> _resume() async {
     await widget.controller.onAppResume();
     if (!mounted || !widget.mapConfigured ||
-        widget.controller.networkState == NetworkState.unavailable) {
+        widget.controller.networkState == NetworkState.unavailable ||
+        widget.mapError.value == KakaoFailure.authentication ||
+        widget.mapMode?.canRetryAutomatically == false) {
       return;
     }
     if (widget.mapError.value != null || widget.mapMode?.kakaoFailed == true ||
@@ -795,7 +800,7 @@ class _MapScreenState extends State<MapScreen>
       showDragHandle: true,
       builder: (context) => AnimatedBuilder(
         animation: Listenable.merge([widget.controller, widget.mapMode,
-          widget.mapError, widget.offlineMaps]),
+          widget.mapError, widget.offlineMaps, widget.kakaoDiagnostics]),
         builder: (context, _) => ServiceStatusSheet(
         kakao: settings.kakaoStatus,
         supabase: settings.supabaseStatus,
@@ -805,6 +810,7 @@ class _MapScreenState extends State<MapScreen>
             ? KakaoState.timedOut : widget.mapError.value != null ? KakaoState.failed
                 : _mapLoaded ? KakaoState.loaded : KakaoState.initializing),
         kakaoFailure: widget.mapMode?.failure ?? widget.mapError.value,
+        kakaoDiagnostics: widget.kakaoDiagnostics?.value ?? const KakaoDiagnostics(),
         supabaseInitialization: widget.supabaseInitialization,
         mapboxInitialization: widget.mapboxInitialization,
         mapboxFailed: widget.offlineMaps?.error != null ||

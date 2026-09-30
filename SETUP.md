@@ -86,11 +86,23 @@ flutter run --dart-define-from-file=config/defines.local.json
 - **Network 확인 중 / 상태 확인 실패**: unknown 상태입니다. Kakao 로드는 계속 시도하며 플러그인 실패를 오프라인으로 확정하지 않습니다.
 - **Network 연결 없음**: 플러그인이 명시적 `none`을 보고했습니다. Wi-Fi OFF→ON 또는 앱 foreground 복귀 시 재조회합니다. 초기/복귀 조회는 0.5초·1.5초 뒤 최대 두 번 재시도합니다.
 - **Kakao 인증/초기화 실패 / timeout**: Network와 별도 문제입니다. Native app key·플랫폼 등록을 확인하고 온라인 재시도를 누르세요.
+- **Kakao lifecycle**: `platformViewCreated → sdkInitialized → enginePrepared → authenticating → authenticated → engineActivated → addViewsRequested → addViewSucceeded → loaded`의 마지막 native 단계와 container size를 표시합니다. 인증 성공·foreground·양수 크기 조건에서만 활성화합니다. `SDK initialized`는 키 전달/초기화 호출 완료이며 서버 인증 성공을 의미하지 않습니다.
+- **Kakao 인증 코드**: `400` 요청 파라미터, `401` 인증 자격 증명, `403` 권한, `429` 할당량, `499` 인증 서버 통신 실패입니다. 499만 0.5초·1.5초 후 최대 두 번 자동 재시도합니다. 종료된 인증 실패는 Wi-Fi/foreground 변화로 자동 반복하지 않으며 사용자가 재시도할 수 있습니다. 원문 `desc`는 수집하거나 표시하지 않습니다.
+- **Expected / Runtime Bundle ID / Match**: Runtime 값은 설치된 앱의 `Bundle.main.bundleIdentifier`를 읽습니다. `no`이면 재서명된 실제 ID를 Kakao Developers의 플랫폼 등록과 대조하세요. 상수 Expected 값은 런타임 ID를 대신하지 않습니다. 키는 `key present / key missing`으로만 표시합니다.
 - **Location 탐색 중**: 첫 fix가 15초를 넘겨도 탐색을 유지합니다. Wi-Fi 전용 iPad의 위치 수신과 정확도는 기기/환경 영향을 받으므로 실제 수신을 확인하세요. 실제 stream/권한/서비스/플러그인 오류는 별도로 표시합니다.
 - **Supabase 초기화 실패**: `plugin / storage / network / timeout / authentication / configuration / unexpected` 분류를 확인합니다. 원문 예외·자격 증명은 표시하지 않습니다.
 - debug 빌드는 `[passcom]` 이벤트에 인터페이스 enum, 네트워크 상태, SDK 상태, 권한/서비스/첫 fix/오류 분류만 기록합니다. 좌표·키/토큰·사용자 식별자는 기록하지 않습니다. release IPA에서는 이 진단 로그를 출력하지 않습니다.
 
 Flutter 3.47은 UIScene engine 콜백에서 모든 플러그인과 커스텀 bridge를 등록해야 합니다. 부트스트랩은 이 AppDelegate와 Scene Manifest를 유지합니다. 참고: [Flutter UIScene migration](https://docs.flutter.dev/release/breaking-changes/uiscenedelegate), [connectivity_plus 요구사항 및 제한](https://pub.dev/packages/connectivity_plus).
+
+iOS bridge의 인증·foreground·크기·499 retry 정책은 SDK-independent `KakaoEngineLifecycle.swift`를 사용합니다. bootstrap은 이 소스와 AppDelegate를 하나의 generated compilation unit으로 합쳐 Xcode 템플릿 변경과 무관하게 포함합니다. Mac에서 CI와 같은 정책 테스트:
+
+```bash
+swiftc -parse-as-library platform_overrides/ios/KakaoEngineLifecycle.swift tool/test_kakao_lifecycle.swift -o /tmp/passcom-kakao-lifecycle-tests
+/tmp/passcom-kakao-lifecycle-tests
+```
+
+공식 [iOS 인증](https://apis.map.kakao.com/ios_v2/docs/getting-started/basics/02_auth/), [View Controls](https://apis.map.kakao.com/ios_v2/docs/getting-started/basics/01_view/) 흐름을 따릅니다. `addViewSucceeded`에서 현재 container bounds를 다시 적용하며, 첫 UIKit 레이아웃이 0×0일 때는 양수 크기를 기다립니다.
 
 ## 7. GitHub Actions Variables
 

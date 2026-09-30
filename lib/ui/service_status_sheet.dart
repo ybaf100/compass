@@ -5,8 +5,10 @@ import '../core/config/service_initialization.dart';
 import '../core/network/network_monitor.dart';
 import '../core/location/location_provider.dart';
 import '../map/kakao_map_state.dart';
+import '../map/kakao_diagnostics.dart';
 
-/// Never accepts or renders raw IDs, keys, tokens, or URLs.
+/// Only the requested public Bundle ID and whitelisted SDK states are shown.
+/// Never accepts or renders keys, tokens, coordinates or raw SDK descriptions.
 class ServiceStatusSheet extends StatelessWidget {
   const ServiceStatusSheet({super.key, required this.kakao,
     required this.supabase, required this.mapbox,
@@ -16,7 +18,8 @@ class ServiceStatusSheet extends StatelessWidget {
     this.mapboxInitialization = const ServiceInitialization.initialized(),
     this.mapboxFailed = false, this.locationAccess,
     this.locationPrecision = LocationPrecision.unknown, this.locationFailure,
-    this.waitingForLocation = false});
+    this.waitingForLocation = false,
+    this.kakaoDiagnostics = const KakaoDiagnostics()});
 
   final ConfigurationStatus kakao;
   final ConfigurationStatus supabase;
@@ -31,6 +34,7 @@ class ServiceStatusSheet extends StatelessWidget {
   final LocationPrecision locationPrecision;
   final LocationFailure? locationFailure;
   final bool waitingForLocation;
+  final KakaoDiagnostics kakaoDiagnostics;
 
   @override
   Widget build(BuildContext context) => SafeArea(child: Center(
@@ -56,6 +60,21 @@ class ServiceStatusSheet extends StatelessWidget {
               KakaoState.failed => '인증/초기화 실패 · ${kakaoFailure?.name ?? 'initialization'}',
               KakaoState.timedOut => 'timeout · 카카오 지도 응답 없음',
             }),
+          ListTile(title: const Text('Kakao Native app key'),
+            subtitle: Text(kakaoDiagnostics.keyPresent ? 'key present' : 'key missing')),
+          ListTile(title: const Text('Kakao SDK'),
+            subtitle: Text(kakaoDiagnostics.sdkInitialized
+                ? 'SDK initialized' : 'SDK not initialized')),
+          ListTile(title: const Text('Kakao lifecycle · 마지막 stage'),
+            subtitle: Text(kakaoDiagnostics.stage?.name ?? '아직 생성되지 않음')),
+          ListTile(title: const Text('Kakao 인증 오류'),
+            subtitle: Text(kakaoDiagnostics.authErrorLabel)),
+          ListTile(title: const Text('인증 자동 재시도'),
+            subtitle: Text('${kakaoDiagnostics.retryCount}/2 · '
+              '${kakaoDiagnostics.retryPending ? '대기 중' : '대기 없음'}')),
+          ListTile(title: const Text('Kakao container size'),
+            subtitle: Text(kakaoDiagnostics.width == null ? '확인 중'
+              : '${kakaoDiagnostics.width!.round()} × ${kakaoDiagnostics.height?.round() ?? 0}')),
           _entry('Supabase', supabase,
             issue: _initializationLabel(supabaseInitialization)),
           _entry('Mapbox', mapbox,
@@ -70,8 +89,14 @@ class ServiceStatusSheet extends StatelessWidget {
           const Divider(height: 30),
           const ListTile(title: Text('Android package'),
             subtitle: Text(ServiceConfiguration.appIdentifier)),
-          const ListTile(title: Text('iOS / iPadOS Bundle ID'),
+          const ListTile(title: Text('Expected Bundle ID'),
             subtitle: Text(ServiceConfiguration.appIdentifier)),
+          ListTile(title: const Text('Runtime Bundle ID'),
+            subtitle: Text(kakaoDiagnostics.runtimeBundleId ?? '확인 불가 / iOS에서 확인')),
+          ListTile(title: const Text('Match'), subtitle: Text(
+            switch (kakaoDiagnostics.matchesBundleId(ServiceConfiguration.appIdentifier)) {
+              true => 'yes', false => 'no', null => '확인 불가',
+            })),
         ]),
     ),
   ));

@@ -62,6 +62,8 @@ internal class KakaoMapPlatformView(
     private var bottomPadding = 0.0
     private var disposed = false
     private var failed = false
+    private val keyPresent = appKey.isNotBlank()
+    private var sdkInitialized = false
 
     init {
         channel.setMethodCallHandler(::handle)
@@ -71,6 +73,7 @@ internal class KakaoMapPlatformView(
         } else {
             try {
                 KakaoMapSdk.init(context.applicationContext, appKey)
+                sdkInitialized = true
                 mapView.start(object : MapLifeCycleCallback() {
                     override fun onMapDestroy() { map = null }
                     override fun onMapError(error: Exception) {
@@ -118,7 +121,9 @@ internal class KakaoMapPlatformView(
             when (call.method) {
                 "status" -> {
                     result.success(mapOf("type" to (if (failed) "failed" else if (map != null) "loaded" else "initializing"),
-                        "category" to "initialization"))
+                        "category" to "initialization", "keyPresent" to keyPresent,
+                        "sdkInitialized" to sdkInitialized,
+                        "stage" to (if (failed) "failed" else if (map != null) "loaded" else "sdkInitialized")))
                     return
                 }
                 "overlays" -> {
@@ -226,7 +231,12 @@ internal class KakaoMapPlatformView(
     }
 
     private fun event(payload: Map<String, Any>) {
-        if (!disposed) channel.invokeMethod("event", payload)
+        if (disposed) return
+        val diagnostic = if (payload["type"] == "loaded" || payload["type"] == "failed") {
+            payload + mapOf("keyPresent" to keyPresent, "sdkInitialized" to sdkInitialized,
+                "stage" to payload["type"]!!)
+        } else payload
+        channel.invokeMethod("event", diagnostic)
     }
 
     fun pause() { if (!disposed) mapView.pause() }

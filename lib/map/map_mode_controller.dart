@@ -33,6 +33,9 @@ class MapModeController extends ChangeNotifier {
   late KakaoState kakaoState;
   KakaoFailure? failure;
   bool get kakaoFailed => failure != null;
+  // Native owns the bounded 499 retry budget. Terminal authentication failures
+  // require an explicit user retry, never a resume/connectivity retry loop.
+  bool get canRetryAutomatically => failure != KakaoFailure.authentication;
   int attempt = 0;
   Timer? _pending;
   MapMode? _pendingTarget;
@@ -41,7 +44,7 @@ class MapModeController extends ChangeNotifier {
   void update({NetworkState? networkState, GeoPoint? position}) {
     var recovering = false;
     if (networkState != null && networkState != this.networkState) {
-      recovering = networkState == NetworkState.available && kakaoFailed;
+      recovering = networkState == NetworkState.available && kakaoFailed && canRetryAutomatically;
       this.networkState = networkState;
     }
     if (position != null) currentPosition = position;

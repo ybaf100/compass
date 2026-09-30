@@ -12,18 +12,20 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('UIScene engine registers plugins and custom native bridges', (tester) async {
-    final network = await ConnectivityNetworkMonitor().current;
+    final network = await ConnectivityNetworkMonitor().current.timeout(const Duration(seconds: 10));
     expect(network.failure, isNull, reason: 'connectivity plugin must be registered');
-    final preferences = await SharedPreferences.getInstance();
+    final preferences = await SharedPreferences.getInstance().timeout(const Duration(seconds: 10));
     await preferences.setBool('plugin_smoke_test', true);
     expect(preferences.getBool('plugin_smoke_test'), isTrue);
     await preferences.remove('plugin_smoke_test');
-    await Geolocator.isLocationServiceEnabled();
-    await Geolocator.checkPermission(); // No permission prompt or coordinates.
+    await Geolocator.isLocationServiceEnabled().timeout(const Duration(seconds: 10));
+    await Geolocator.checkPermission().timeout(const Duration(seconds: 10)); // No prompt or coordinates.
     await NativeHeadingProvider().heading.first.timeout(const Duration(seconds: 5));
 
     KakaoFailure? failure;
     final map = KakaoMapProvider(appKey: '', onFailure: (value) => failure = value);
+    await map.refreshRuntimeIdentity().timeout(const Duration(seconds: 10));
+    expect(map.diagnostics.value.runtimeBundleId, 'com.ybaf100.compass');
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: map.buildMap(
       bottomPadding: 0, onPicked: (_) {}, onNamedPlacePicked: (_, _) {},
       onLoaded: () {}, onGesture: () {}))));
@@ -33,6 +35,8 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(failure, KakaoFailure.initialization,
       reason: 'Native platform view must exist; missing key fails safely');
+    expect(map.diagnostics.value.keyPresent, isFalse);
+    expect(map.diagnostics.value.sdkInitialized, isFalse);
     await tester.pumpWidget(const SizedBox.shrink());
     map.dispose();
   });

@@ -307,6 +307,11 @@ void main() {
     expect(mode.failure, KakaoFailure.authentication);
     expect(find.text('카카오 지도 연결에 실패했습니다.'), findsOneWidget);
     expect(find.text('오프라인 · 이 지역의 지도가 없습니다.'), findsNothing);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(error.value, KakaoFailure.authentication);
+    expect(mode.attempt, 0);
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose(); mode.dispose(); maps.dispose(); error.dispose();
   });

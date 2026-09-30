@@ -203,4 +203,21 @@ void main() {
     expect(mode.failure, KakaoFailure.timeout);
     mode.dispose(); maps.dispose();
   });
+
+  test('terminal auth failure never automatically retries on network recovery', () async {
+    final maps = OfflineMapController(repository: _Store(), backend: null);
+    final mode = MapModeController(kakaoConfigured: true, offlineMaps: maps,
+      switchDelay: const Duration(milliseconds: 1));
+    mode.kakaoFailure(KakaoFailure.authentication);
+    for (var i = 0; i < 5; i++) {
+      mode.update(networkState: NetworkState.unavailable);
+      mode.update(networkState: NetworkState.available);
+    }
+    expect(mode.failure, KakaoFailure.authentication);
+    expect(mode.attempt, 0);
+    mode.retryKakao(); // Explicit user retry remains available.
+    expect(mode.failure, isNull);
+    expect(mode.attempt, 1);
+    mode.dispose(); maps.dispose();
+  });
 }

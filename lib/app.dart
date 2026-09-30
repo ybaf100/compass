@@ -78,6 +78,7 @@ class _DestinationCompassAppState extends State<DestinationCompassApp> {
   @override
   void initState() {
     super.initState();
+    unawaited(_mapProvider.refreshRuntimeIdentity());
     _mapMode.addListener(_onModeChanged);
   }
 
@@ -115,6 +116,7 @@ class _DestinationCompassAppState extends State<DestinationCompassApp> {
       mapProvider: _mapProvider,
       mapConfigured: widget.mapConfigured,
       mapError: widget.mapError,
+      kakaoDiagnostics: _mapProvider.diagnostics,
       roomController: _roomController,
       navigationController: _navigation,
       offlineMapProvider: _offlineProvider,

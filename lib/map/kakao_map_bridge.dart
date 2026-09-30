@@ -9,12 +9,20 @@ import 'package:flutter/widgets.dart';
 abstract class KakaoMapBridge {
   Widget build({required String appKey, required ValueChanged<Map<String, dynamic>> onEvent});
   Future<void> send(String method, Map<String, dynamic> arguments);
+  Future<String?> runtimeBundleIdentifier();
   void detach();
 }
 
 class PlatformKakaoMapBridge implements KakaoMapBridge {
   MethodChannel? _channel;
   ValueChanged<Map<String, dynamic>>? _onEvent;
+
+  @override
+  Future<String?> runtimeBundleIdentifier() async {
+    if (kIsWeb || !Platform.isIOS) return null;
+    return const MethodChannel('app.destination_compass/runtime')
+        .invokeMethod<String>('bundleIdentifier');
+  }
 
   @override
   Widget build({required String appKey,
@@ -47,8 +55,7 @@ class PlatformKakaoMapBridge implements KakaoMapBridge {
     _onEvent?.call({'type': 'attached'});
     // Native authentication can finish before Flutter attaches its handler.
     channel.invokeMapMethod<String, dynamic>('status').then((status) {
-      if (_channel == channel && status != null &&
-          (status['type'] == 'loaded' || status['type'] == 'failed')) {
+      if (_channel == channel && status != null) {
         _onEvent?.call(status);
       }
     }).catchError((Object _) {

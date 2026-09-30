@@ -5,6 +5,7 @@ import 'package:destination_compass/core/config/service_configuration.dart';
 import 'package:destination_compass/core/config/service_initialization.dart';
 import 'package:destination_compass/core/network/network_monitor.dart';
 import 'package:destination_compass/map/kakao_map_state.dart';
+import 'package:destination_compass/map/kakao_diagnostics.dart';
 import 'package:destination_compass/ui/service_status_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -53,12 +54,27 @@ void main() {
     expect(find.text('초기화 중 · 지도 연결 확인 필요'), findsOneWidget);
     expect(find.text('미입력'), findsOneWidget);
     expect(find.text('형식 오류'), findsOneWidget);
-    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.scrollUntilVisible(find.text('Expected Bundle ID'), 250);
     await tester.pumpAndSettle();
     expect(find.text(ServiceConfiguration.appIdentifier), findsNWidgets(2));
     expect(find.textContaining('pk.test'), findsNothing);
     expect(find.textContaining('sb_publishable_test'), findsNothing);
   });
+
+  for (final matches in [true, false]) {
+    testWidgets('runtime Bundle ID ${matches ? 'match' : 'mismatch'} is actual native identity', (tester) async {
+      final runtime = matches ? ServiceConfiguration.appIdentifier : 'com.example.resigned';
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body:
+        ServiceStatusSheet(kakao: ConfigurationStatus.configured,
+          supabase: ConfigurationStatus.missing, mapbox: ConfigurationStatus.missing,
+          kakaoDiagnostics: KakaoDiagnostics(runtimeBundleId: runtime,
+            keyPresent: true, sdkInitialized: true, stage: KakaoStage.authenticated)))));
+      await tester.scrollUntilVisible(find.text('Match'), 250);
+      expect(find.text(runtime), matches ? findsAtLeastNWidgets(2) : findsOneWidget);
+      expect(find.text(matches ? 'yes' : 'no'), findsOneWidget);
+      expect(find.textContaining('Native app key value'), findsNothing);
+    });
+  }
 
   test('service initialization classifies failures without connectivity gating', () async {
     var attempts = 0;

@@ -99,6 +99,8 @@ iOS는 UIScene의 `didInitializeImplicitFlutterEngine`에서 플러그인·Headi
 
 ## 검증
 
+Kakao iOS는 인증 성공·foreground·유효한 container 크기 이후에만 engine을 활성화합니다. 서비스 상태에서 native lifecycle 단계, 400/401/403/429/499 인증 코드, 키 존재 여부와 실제 설치 Bundle ID의 일치 여부를 확인할 수 있습니다. 499 자동 재시도는 두 번으로 제한하며, 종료된 인증 오류는 네트워크/앱 복귀로 반복하지 않습니다. CI는 production의 SDK-independent Swift 정책도 별도로 테스트합니다.
+
 같은 브랜치에서 새 CI가 시작되면 이전 실행은 자동 취소됩니다. push와 PR 이벤트를 같은 concurrency 그룹으로 묶고, 다른 브랜치/포크의 실행은 독립적으로 유지합니다.
 
 `flutter test`, `flutter analyze`, `flutter build apk --debug`, `flutter build ios --simulator --debug`, `flutter build ios --release --no-codesign`이 CI에 설정돼 있습니다. 부트스트랩 두 번 실행 후 이름/식별자를 검사하고, 완성된 APK·시뮬레이터 앱·IPA에서도 `passcom` 이름과 `com.ybaf100.compass` 식별자를 검증합니다. 성공한 GitHub Actions 실행의 **Artifacts**에서 Android 디버그 APK(`passcom-android-debug`), iOS 시뮬레이터 앱 ZIP(`passcom-ios-simulator`), iPhone/iPad 실기기용 미서명 IPA(`passcom-ios-sideload-unsigned`)를 다운로드할 수 있습니다. GitHub가 IPA를 한 번 더 ZIP으로 묶으므로 내려받은 ZIP에서 `.ipa` 파일을 꺼내세요.

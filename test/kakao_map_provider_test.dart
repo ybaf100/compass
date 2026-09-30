@@ -4,6 +4,7 @@ import 'package:destination_compass/destination/destination_model.dart';
 import 'package:destination_compass/map/kakao_map_bridge.dart';
 import 'package:destination_compass/map/kakao_map_provider.dart';
 import 'package:destination_compass/map/kakao_map_state.dart';
+import 'package:destination_compass/map/kakao_diagnostics.dart';
 import 'package:destination_compass/map/map_provider.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +13,9 @@ class FakeKakaoBridge implements KakaoMapBridge {
   ValueChanged<Map<String, dynamic>>? listener;
   final calls = <(String, Map<String, dynamic>)>[];
   String? passedKey;
+  String? bundleId = 'com.ybaf100.compass';
+  @override
+  Future<String?> runtimeBundleIdentifier() async => bundleId;
   @override
   Widget build({required String appKey,
       required ValueChanged<Map<String, dynamic>> onEvent}) {
@@ -36,6 +40,58 @@ Future<void> flush() => Future<void>.delayed(Duration.zero);
 void main() {
   const own = GeoPoint(37.5, 127.0);
   const friend = GeoPoint(37.51, 127.01);
+
+  test('native auth success lifecycle diagnostics are retained through loaded', () async {
+    final bridge = FakeKakaoBridge();
+    final provider = KakaoMapProvider(appKey: 'never-record-key', bridge: bridge);
+    provider.buildMap(bottomPadding: 0, onPicked: (_) {},
+      onNamedPlacePicked: (_, _) {}, onLoaded: () {}, onGesture: () {});
+    await provider.refreshRuntimeIdentity();
+    expect(provider.diagnostics.value.matchesBundleId('com.ybaf100.compass'), isTrue);
+    for (final stage in KakaoStage.values.where((s) => s != KakaoStage.failed)) {
+      bridge.emit({'type': stage == KakaoStage.loaded ? 'loaded' : 'diagnostics',
+        'stage': stage.name, 'keyPresent': true, 'sdkInitialized': true});
+      expect(provider.diagnostics.value.stage, stage);
+    }
+    expect(provider.diagnostics.value.sdkInitialized, isTrue);
+    provider.dispose();
+  });
+
+  for (final code in [400, 401, 403, 429, 499]) {
+    test('auth code $code reaches diagnostics without raw SDK desc or key', () {
+      final bridge = FakeKakaoBridge();
+      KakaoFailure? failure;
+      final provider = KakaoMapProvider(appKey: 'never-record-key', bridge: bridge,
+        onFailure: (value) => failure = value);
+      provider.buildMap(bottomPadding: 0, onPicked: (_) {},
+        onNamedPlacePicked: (_, _) {}, onLoaded: () {}, onGesture: () {});
+      bridge.emit({'type': 'failed', 'category': 'authentication',
+        'stage': 'failed', 'authErrorCode': code, 'desc': 'never-record-key'});
+      expect(failure, KakaoFailure.authentication);
+      expect(provider.diagnostics.value.authErrorCode, code);
+      expect(provider.diagnostics.value.authErrorLabel, startsWith('$code ·'));
+      expect(provider.diagnostics.value.authErrorLabel, isNot(contains('never-record-key')));
+      provider.dispose();
+    });
+  }
+
+  test('499 retry diagnostic is not a terminal map failure before budget exhaustion', () {
+    final bridge = FakeKakaoBridge();
+    KakaoFailure? failure;
+    final provider = KakaoMapProvider(appKey: 'test', bridge: bridge,
+      onFailure: (value) => failure = value);
+    provider.buildMap(bottomPadding: 0, onPicked: (_) {},
+      onNamedPlacePicked: (_, _) {}, onLoaded: () {}, onGesture: () {});
+    bridge.emit({'type': 'diagnostics', 'stage': 'failed', 'authErrorCode': 499,
+      'retryCount': 2, 'retryPending': true});
+    expect(failure, isNull);
+    expect(provider.diagnostics.value.retryCount, 2);
+    expect(provider.diagnostics.value.retryPending, isTrue);
+    bridge.emit({'type': 'failed', 'category': 'authentication',
+      'stage': 'failed', 'authErrorCode': 499, 'retryCount': 2, 'retryPending': false});
+    expect(failure, KakaoFailure.authentication);
+    provider.dispose();
+  });
 
   test('native ready/failure, tap, member tap and gesture events', () async {
     final bridge = FakeKakaoBridge();
