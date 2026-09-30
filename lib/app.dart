@@ -97,7 +97,7 @@ class _DestinationCompassAppState extends State<DestinationCompassApp> {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: '목적지 나침반',
+    title: 'passcom',
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
       useMaterial3: true,

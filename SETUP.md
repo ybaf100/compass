@@ -1,12 +1,14 @@
-# 서비스 설정 및 실기기 빌드
+# passcom — 서비스 설정 및 실기기 빌드
 
 ## 1. 앱 식별자
 
-Android `applicationId`와 `namespace`, iOS/iPadOS Runner Bundle ID는 모두 `com.ybaf100.compass`입니다. `bash tool/bootstrap.sh`를 다시 실행해도 같은 값으로 고정됩니다. iOS RunnerTests는 `com.ybaf100.compass.RunnerTests`입니다. Kakao Developers에는 **Runner의 ID**를 등록하세요. 앱 표시 이름은 `목적지 나침반`입니다. SideStore 호환을 위해 미서명 IPA의 표시 이름만 `Compass`로 포장하며 Bundle ID는 유지합니다. 서명 도구가 Bundle ID를 변경할 수 있습니다.
+서비스명과 Android/iOS/iPadOS 홈 화면 표시 이름은 모두 **passcom**입니다. Flutter MaterialApp 제목과 iOS CFBundleName, 미서명 sideload IPA의 표시 이름도 `passcom`입니다.
+
+Android `applicationId`와 `namespace`, iOS/iPadOS Runner Bundle ID는 모두 `com.ybaf100.compass`입니다. **앱 이름 `passcom`은 플랫폼 인증 식별자가 아닙니다.** Kakao Developers에 등록할 package/Bundle ID는 그대로 유지합니다. 내부 Flutter 프로젝트명은 `destination_compass`, iOS RunnerTests는 `com.ybaf100.compass.RunnerTests`입니다. `bash tool/bootstrap.sh`를 반복해도 표시 이름과 식별자는 유지됩니다. SideStore/AltStore 등 재서명 도구가 Bundle ID를 변경할 수 있으므로 설치 후 실제 ID를 확인하세요.
 
 ## 2. Kakao Maps 설정
 
-1. [Kakao Developers](https://developers.kakao.com/)에 로그인해 **앱 관리 → 앱 생성**에서 앱을 만듭니다.
+1. [Kakao Developers](https://developers.kakao.com/)에 로그인해 **앱 관리 → 앱 생성**에서 앱 이름을 **passcom**으로 입력해 앱을 만듭니다. 이미 만든 앱은 이름을 passcom으로 변경하고 기존 플랫폼 식별자를 유지하세요.
 2. 해당 앱의 **카카오맵 → 사용 설정**에서 상태를 **ON**으로 설정합니다. 2026년 7월 이후의 지도 API 사용량/무료 할당량 정책과 필요한 결제 설정도 확인합니다.
 3. 앱 관리 페이지의 **앱 → 플랫폼 키 → 네이티브 앱 키**에서 값을 복사합니다. **REST API 키, JavaScript 키, Admin 키가 아닙니다.** 이 값을 `KAKAO_NATIVE_APP_KEY`에 입력합니다.
 4. 같은 네이티브 앱 키 설정의 **패키지명**에 `com.ybaf100.compass`, **키 해시**에 실제 서명 인증서의 Key Hash를 등록하고 저장합니다. 각 개발자의 debug 키, 릴리스 키, Google Play App Signing 키는 서로 다를 수 있으므로 실제로 배포하는 모든 서명 키의 해시를 등록합니다.
@@ -105,7 +107,16 @@ flutter build ios --simulator --debug --dart-define-from-file=config/defines.loc
 flutter build ios --release --no-codesign --dart-define-from-file=config/defines.local.json
 ```
 
-GitHub Variables를 저장한 뒤 **Actions → verify compass → 최신 실행 → Re-run all jobs**를 누르거나 작업 브랜치에 새 커밋을 push합니다. 해당 실행의 **Artifacts**에서 `compass-android-debug`(APK), `compass-ios-simulator`(시뮬레이터 ZIP), `compass-ios-sideload-unsigned`(미서명 IPA가 담긴 ZIP)를 받습니다. Re-run 시점에 Variables가 다시 평가되는지 확실히 하려면 새 커밋으로 새 실행을 시작하세요. 미서명 IPA는 Apple 서명/프로비저닝이 없으므로 바로 설치되지 않습니다. 서명 도구가 Bundle ID를 바꾸면 Kakao 등록값과 재대조하세요.
+GitHub Variables를 저장한 뒤 **Actions → verify passcom → 최신 실행 → Re-run all jobs**를 누르거나 작업 브랜치에 새 커밋을 push합니다. 해당 실행의 **Artifacts**에서 `passcom-android-debug`(APK), `passcom-ios-simulator`(시뮬레이터 ZIP), `passcom-ios-sideload-unsigned`(미서명 IPA가 담긴 ZIP)를 받습니다. Re-run 시점에 Variables가 다시 평가되는지 확실히 하려면 새 커밋으로 새 실행을 시작하세요. 미서명 IPA는 Apple 서명/프로비저닝이 없으므로 바로 설치되지 않습니다. 서명 도구가 Bundle ID를 바꾸면 Kakao 등록값과 재대조하세요.
+
+CI는 두 번의 bootstrap 후 생성된 설정과 완성된 APK·iOS 앱·IPA의 이름/식별자를 검증합니다. 로컬에서도 같은 검사를 실행할 수 있습니다. APK 검사에는 Android SDK build-tools의 `aapt`가 필요하며 `ANDROID_HOME` 또는 PATH에서 자동으로 찾습니다.
+
+```bash
+python3 tool/verify_app_identity.py
+python3 tool/verify_app_identity.py --apk build/app/outputs/flutter-apk/app-debug.apk
+python3 tool/verify_app_identity.py --ios-app build/ios/iphonesimulator/Runner.app
+python3 tool/verify_app_identity.py --ipa build/ios/ipa/passcom-ios-sideload-unsigned.ipa
+```
 
 ## 9. 실제 기기 체크리스트
 

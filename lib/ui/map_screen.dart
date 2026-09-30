@@ -512,7 +512,7 @@ class _MapScreenState extends State<MapScreen>
                 const Icon(Icons.navigation_rounded,
                     color: Color(0xFF6BDBED)),
                 const SizedBox(width: 8),
-                const Expanded(child: Text('목적지 나침반',
+                const Expanded(child: Text('passcom',
                     style: TextStyle(color: Colors.white,
                         fontWeight: FontWeight.w700))),
                 if (controller.destination != null)

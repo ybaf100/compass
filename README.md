@@ -1,6 +1,15 @@
-# 목적지 나침반
+# passcom
 
-카카오 지도에서 목적지를 고르고, GPS 거리와 기기 방향 센서로 가리키는 Flutter 앱입니다. iOS, iPadOS, Android를 대상으로 합니다. 지도와 센서는 네이티브 SDK를 쓰고, 거리·방위각·화면은 하나의 Dart 코드베이스로 공유합니다.
+passcom은 지도에서 목적지를 지정하고 기기의 방향을 기준으로 목적지를 가리키는 크로스플랫폼 목적지 나침반 앱입니다. iOS, iPadOS, Android를 대상으로 합니다. 지도와 센서는 네이티브 SDK를 쓰고, 거리·방위각·화면은 하나의 Flutter/Dart 코드베이스로 공유합니다.
+
+| 기능 | 기술 |
+| --- | --- |
+| 온라인 지도 | Kakao Maps |
+| 오프라인 지도 | Mapbox |
+| 실시간 친구방 | Supabase |
+| 나침반 | 네이티브 기기 센서 |
+
+홈 화면 앱 이름과 앱 내 브랜드명은 모두 `passcom`입니다. Android applicationId/namespace와 iOS/iPadOS Bundle ID는 `com.ybaf100.compass`, 내부 Flutter 프로젝트명은 `destination_compass`를 유지합니다. 부트스트랩을 다시 실행해도 이름과 식별자는 동일합니다.
 
 **실제 서비스 연결과 실기기 빌드:** [SETUP.md](SETUP.md) — 앱 식별자, Kakao/Supabase/Mapbox 발급 순서, Android Key Hash, 로컬 설정 파일, GitHub Actions Variables, APK/IPA 다운로드, 기기 점검 및 문제 해결.
 
@@ -48,7 +57,7 @@ Android 부트스트랩은 네이티브 Kakao Maps SDK v2와 Mapbox SDK에 AGP 8
 
 위치는 기존 GPS 입력을 재사용하며 정확도 80m 이하에서만 전송합니다. 최소 2초 간격을 두고, 8m 이상 이동하거나 8초가 지나면 갱신합니다. Ping은 최근 20개 또는 30분 이내로 제한합니다. 친구 마커의 작은 이동은 짧게 보간하며, 먼 이동과 오래된 정보는 즉시 표시합니다.
 
-Kakao Developers에서 앱을 만들고 **카카오맵 → 사용 설정**을 켠 뒤 Native app key에 Android 패키지 이름, APK 서명 Key Hash, iOS Bundle ID를 등록합니다. 패키지/Bundle ID는 `com.ybaf100.compass`입니다. 상세 단계는 [SETUP.md](SETUP.md)에 있습니다. 키가 없어도 앱은 시작하고 이유를 보여주지만 온라인 지도는 나오지 않습니다.
+Kakao Developers에서 앱 이름을 `passcom`으로 만들고 **카카오맵 → 사용 설정**을 켠 뒤 Native app key에 Android 패키지 이름, APK 서명 Key Hash, iOS Bundle ID를 등록합니다. 패키지/Bundle ID는 `com.ybaf100.compass`입니다. 상세 단계는 [SETUP.md](SETUP.md)에 있습니다. 키가 없어도 앱은 시작하고 이유를 보여주지만 온라인 지도는 나오지 않습니다.
 
 Android:
 
@@ -86,9 +95,9 @@ flutter build ios --simulator --debug --dart-define=KAKAO_NATIVE_APP_KEY=발급�
 
 ## 검증
 
-`flutter test`, `flutter analyze`, `flutter build apk --debug`, `flutter build ios --simulator --debug`, `flutter build ios --release --no-codesign`이 CI에 설정돼 있습니다. 성공한 GitHub Actions 실행의 **Artifacts**에서 Android 디버그 APK(`compass-android-debug`), iOS 시뮬레이터 앱 ZIP(`compass-ios-simulator`), iPhone/iPad 실기기용 미서명 IPA(`compass-ios-sideload-unsigned`)를 다운로드할 수 있습니다. GitHub가 IPA를 한 번 더 ZIP으로 묶으므로 내려받은 ZIP에서 `.ipa` 파일을 꺼내세요.
+`flutter test`, `flutter analyze`, `flutter build apk --debug`, `flutter build ios --simulator --debug`, `flutter build ios --release --no-codesign`이 CI에 설정돼 있습니다. 부트스트랩 두 번 실행 후 이름/식별자를 검사하고, 완성된 APK·시뮬레이터 앱·IPA에서도 `passcom` 이름과 `com.ybaf100.compass` 식별자를 검증합니다. 성공한 GitHub Actions 실행의 **Artifacts**에서 Android 디버그 APK(`passcom-android-debug`), iOS 시뮬레이터 앱 ZIP(`passcom-ios-simulator`), iPhone/iPad 실기기용 미서명 IPA(`passcom-ios-sideload-unsigned`)를 다운로드할 수 있습니다. GitHub가 IPA를 한 번 더 ZIP으로 묶으므로 내려받은 ZIP에서 `.ipa` 파일을 꺼내세요.
 
-`compass-ios-sideload-unsigned.ipa`는 arm64 iOS 실기기용 release 바이너리를 `Payload/Runner.app` 형식으로 묶은 것입니다. 서명 없이 직접 설치할 수는 없으며 SideStore 같은 사이드로드 앱에서 **IPA를 선택하고 본인 Apple 계정으로 서명**해야 합니다. 시뮬레이터 ZIP은 실기기에 설치할 수 없습니다. SideStore에서 비ASCII 앱 이름으로 App ID 등록 오류가 발생하지 않도록 사이드로드 IPA의 홈 화면 표시 이름만 `Compass`로 설정했습니다. IPA의 실제 설치·GPS·heading·지도 인증은 실기기에서 확인해야 합니다.
+`passcom-ios-sideload-unsigned.ipa`는 arm64 iOS 실기기용 release 바이너리를 `Payload/Runner.app` 형식으로 묶은 것입니다. 일반 iOS 빌드와 동일하게 표시 이름과 CFBundleName은 `passcom`, Bundle ID는 `com.ybaf100.compass`입니다. 패키징 과정에서 이름을 덮어쓰지 않습니다. 서명 없이 직접 설치할 수는 없으며 SideStore 같은 사이드로드 앱에서 **IPA를 선택하고 본인 Apple 계정으로 서명**해야 합니다. 시뮬레이터 ZIP은 실기기에 설치할 수 없습니다. IPA의 실제 설치·GPS·heading·지도 인증은 실기기에서 확인해야 합니다.
 
 CI 빌드에서 온라인 지도·친구방·오프라인 지도를 사용하려면 저장소 **Settings → Secrets and variables → Actions → Variables**에 `KAKAO_NATIVE_APP_KEY`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `MAPBOX_ACCESS_TOKEN`을 등록하고 빌드를 다시 실행하세요. 값이 없는 빌드도 컴파일되지만 해당 서비스는 동작하지 않습니다. 앱에 포함되는 값이므로 Supabase **service_role** 키나 Mapbox secret token은 절대 사용하지 마세요. Kakao에 등록한 Android 패키지/서명 Key Hash와 iOS Bundle ID가 실제 설치된 앱과 일치해야 합니다. 사이드로드 도구가 iOS Bundle ID를 다시 쓰면 등록값도 확인해야 합니다.
 

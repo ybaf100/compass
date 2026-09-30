@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 
 root = Path(__file__).resolve().parents[1]
 app_id = 'com.ybaf100.compass'
+app_name = 'passcom'
 manifest = root / 'android/app/src/main/AndroidManifest.xml'
 android_ns = 'http://schemas.android.com/apk/res/android'
 ET.register_namespace('android', android_ns)
@@ -15,7 +16,7 @@ element = tree.getroot()
 application = element.find('application')
 if application is None:
     raise RuntimeError('Flutter Android application entry not found')
-application.set(f'{{{android_ns}}}label', '목적지 나침반')
+application.set(f'{{{android_ns}}}label', app_name)
 for permission in ('ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION',
                    'INTERNET', 'ACCESS_NETWORK_STATE'):
     name = f'android.permission.{permission}'
@@ -108,7 +109,8 @@ with info.open('rb') as file:
     data = plistlib.load(file)
 data['NSLocationWhenInUseUsageDescription'] = (
     '현재 위치에서 목적지까지의 거리와 방향을 표시하는 데 위치 정보가 필요합니다.')
-data['CFBundleDisplayName'] = '목적지 나침반'
+data['CFBundleDisplayName'] = app_name
+data['CFBundleName'] = app_name
 data['UISupportedInterfaceOrientations'] = [
     'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationLandscapeLeft',
     'UIInterfaceOrientationLandscapeRight']

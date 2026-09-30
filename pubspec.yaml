@@ -1,5 +1,5 @@
 name: destination_compass
-description: 목적지 나침반 — 카카오 지도와 기기 방향으로 목적지를 찾습니다.
+description: passcom — 카카오 지도와 기기 방향으로 목적지를 찾는 목적지 나침반 앱.
 publish_to: none
 version: 0.1.0+1
 
