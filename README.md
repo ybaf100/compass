@@ -99,6 +99,8 @@ iOS는 UIScene의 `didInitializeImplicitFlutterEngine`에서 플러그인·Headi
 
 ## 검증
 
+같은 브랜치에서 새 CI가 시작되면 이전 실행은 자동 취소됩니다. push와 PR 이벤트를 같은 concurrency 그룹으로 묶고, 다른 브랜치/포크의 실행은 독립적으로 유지합니다.
+
 `flutter test`, `flutter analyze`, `flutter build apk --debug`, `flutter build ios --simulator --debug`, `flutter build ios --release --no-codesign`이 CI에 설정돼 있습니다. 부트스트랩 두 번 실행 후 이름/식별자를 검사하고, 완성된 APK·시뮬레이터 앱·IPA에서도 `passcom` 이름과 `com.ybaf100.compass` 식별자를 검증합니다. 성공한 GitHub Actions 실행의 **Artifacts**에서 Android 디버그 APK(`passcom-android-debug`), iOS 시뮬레이터 앱 ZIP(`passcom-ios-simulator`), iPhone/iPad 실기기용 미서명 IPA(`passcom-ios-sideload-unsigned`)를 다운로드할 수 있습니다. GitHub가 IPA를 한 번 더 ZIP으로 묶으므로 내려받은 ZIP에서 `.ipa` 파일을 꺼내세요.
 
 `passcom-ios-sideload-unsigned.ipa`는 arm64 iOS 실기기용 release 바이너리를 `Payload/Runner.app` 형식으로 묶은 것입니다. 일반 iOS 빌드와 동일하게 표시 이름과 CFBundleName은 `passcom`, Bundle ID는 `com.ybaf100.compass`입니다. 패키징 과정에서 이름을 덮어쓰지 않습니다. 서명 없이 직접 설치할 수는 없으며 SideStore 같은 사이드로드 앱에서 **IPA를 선택하고 본인 Apple 계정으로 서명**해야 합니다. 시뮬레이터 ZIP은 실기기에 설치할 수 없습니다. IPA의 실제 설치·GPS·heading·지도 인증은 실기기에서 확인해야 합니다.

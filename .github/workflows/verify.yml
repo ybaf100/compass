@@ -4,6 +4,12 @@ on:
     branches: [main, 'feature/**']
   pull_request:
 
+# Push and PR events for the same source branch share a group. Other branches
+# and forks retain their own runs; only superseded builds are cancelled.
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   android:
     runs-on: ubuntu-latest
