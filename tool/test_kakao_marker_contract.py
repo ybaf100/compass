@@ -25,6 +25,16 @@ class KakaoMarkerContractTests(unittest.TestCase):
         self.assertIn('.setClickable(id.startsWith("member:"))', KOTLIN)
         self.assertIn('options.clickable = id.hasPrefix("member:")', SWIFT)
 
+    def test_unrelated_overlay_frames_do_not_cancel_heading_animation(self):
+        for source, start, end in (
+            (SWIFT, "private func applyMarkers", "private func updateUserHeading"),
+            (KOTLIN, "private fun applyMarkers", "private fun updateUserHeading"),
+        ):
+            body = source.split(start, 1)[1].split(end, 1)[0]
+            self.assertIn("userHeading != previousHeading || !userHasOrientation", body)
+            self.assertNotIn("updateUserHeading(animated: false)", body)
+            self.assertNotIn("updateUserHeading(false)", body)
+
     def test_prepare_return_remains_diagnostic_only(self):
         self.assertIn("lifecycle.prepareReturned(controller.prepareEngine())", SWIFT)
         self.assertNotIn("prepareEngine() == false", SWIFT)

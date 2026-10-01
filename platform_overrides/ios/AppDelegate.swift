@@ -467,6 +467,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
 
   private func applyMarkers() {
     guard let layer else { return }
+    let previousHeading = userHeading
     let wanted = Set(markers.compactMap { $0["id"] as? String })
     for id in Array(pois.keys) where !wanted.contains(id) {
       layer.removePoi(poiID: id)
@@ -507,7 +508,10 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
       }
       kinds[id] = displayKind
     }
-    updateUserHeading(animated: false)
+    // Friend motion frames must not cancel the user's in-flight rotation.
+    if userHeading != previousHeading || !userHasOrientation {
+      updateUserHeading(animated: true)
+    }
   }
 
   private func updateUserHeading(animated: Bool) {

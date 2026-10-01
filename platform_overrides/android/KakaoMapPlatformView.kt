@@ -226,6 +226,7 @@ internal class KakaoMapPlatformView(
     private fun applyMarkers() {
         val kakaoMap = map ?: return
         val layer = kakaoMap.labelManager?.layer ?: return
+        val previousHeading = userHeading
         val desired = pendingMarkers.mapNotNull { it["id"] as? String }.toSet()
         for (id in labels.keys.toList()) {
             if (id !in desired) { labels.remove(id)?.remove(); kinds.remove(id) }
@@ -260,7 +261,8 @@ internal class KakaoMapPlatformView(
             }
             kinds[id] = displayKind
         }
-        updateUserHeading(false)
+        // Friend motion frames must not cancel the user's in-flight rotation.
+        if (userHeading != previousHeading || !userHasOrientation) updateUserHeading(true)
     }
 
     private fun updateUserHeading(animated: Boolean) {
