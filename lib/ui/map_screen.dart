@@ -127,6 +127,7 @@ class _MapScreenState extends State<MapScreen>
       widget.roomController?.setForeground(true);
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
+      _mapTimeout?.cancel();
       widget.roomController?.setForeground(false);
     }
   }
@@ -140,8 +141,12 @@ class _MapScreenState extends State<MapScreen>
       return;
     }
     if (widget.mapError.value != null || widget.mapMode?.kakaoFailed == true ||
-        _mapTimedOut || !_mapLoaded) {
+        _mapTimedOut) {
       _retryMap();
+    } else if (!_mapLoaded && _activeMap != null) {
+      // Native resumes an in-flight authentication/499 retry itself. Recreating
+      // the view here would discard authentication and replenish its budget.
+      _armMapTimeout();
     }
   }
 

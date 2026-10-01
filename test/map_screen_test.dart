@@ -15,6 +15,7 @@ import 'package:destination_compass/offline/offline_region_repository.dart';
 import 'package:destination_compass/offline/offline_tile_backend.dart';
 import 'package:destination_compass/ui/compass_panel.dart';
 import 'package:destination_compass/ui/map_screen.dart';
+import 'package:destination_compass/ui/service_status_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -146,7 +147,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('서비스 상태'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Android package'), 250);
+    await tester.scrollUntilVisible(find.text('Android package'), 250,
+      scrollable: find.descendant(of: find.byType(ServiceStatusSheet),
+        matching: find.byType(Scrollable)));
     expect(find.text('Android package'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
@@ -287,6 +290,31 @@ void main() {
     expect(mode.mode, MapMode.onlineKakao);
     expect(error.value, isNull);
     expect(find.byType(CompassPanel), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose(); mode.dispose(); maps.dispose(); error.dispose();
+  });
+
+  testWidgets('resume preserves in-flight auth and pauses timeout in background', (tester) async {
+    final controller = DestinationController(locationProvider: _Location(),
+      headingProvider: _Heading(), networkMonitor: _Network(), store: _Store());
+    final maps = OfflineMapController(repository: _Regions(), backend: null);
+    final mode = MapModeController(kakaoConfigured: true, offlineMaps: maps);
+    final map = _Map()..emitLoaded = false;
+    final error = ValueNotifier<KakaoFailure?>(null);
+    await tester.pumpWidget(MaterialApp(home: MapScreen(controller: controller,
+      mapProvider: map, offlineMaps: maps, mapMode: mode,
+      mapConfigured: true, mapError: error)));
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump(const Duration(seconds: 20));
+    expect(error.value, isNull);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(map.resets, 0);
+    expect(mode.attempt, 0);
+    expect(mode.mode, MapMode.onlineKakao);
+    await tester.pump(const Duration(seconds: 17));
+    expect(error.value, isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose(); mode.dispose(); maps.dispose(); error.dispose();
   });
