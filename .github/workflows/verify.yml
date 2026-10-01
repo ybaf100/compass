@@ -29,7 +29,11 @@ jobs:
           bash tool/bootstrap.sh
           python3 tool/verify_app_identity.py
       - run: flutter analyze
+      - run: python3 tool/test_kakao_marker_contract.py
       - run: flutter test
+      - name: Test Android production marker geometry
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest
       - name: Build Android debug APK
         env:
           KAKAO_NATIVE_APP_KEY: ${{ vars.KAKAO_NATIVE_APP_KEY }}
@@ -60,6 +64,10 @@ jobs:
         run: |
           swiftc -parse-as-library platform_overrides/ios/KakaoEngineLifecycle.swift tool/test_kakao_lifecycle.swift -o "$RUNNER_TEMP/kakao-lifecycle-tests"
           "$RUNNER_TEMP/kakao-lifecycle-tests"
+      - name: Test SDK-independent iOS marker geometry
+        run: |
+          swiftc -parse-as-library platform_overrides/ios/KakaoMarkerGeometry.swift tool/test_kakao_markers.swift -o "$RUNNER_TEMP/kakao-marker-tests"
+          "$RUNNER_TEMP/kakao-marker-tests"
       - uses: subosito/flutter-action@v2
         with:
           channel: stable

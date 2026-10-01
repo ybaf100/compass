@@ -42,6 +42,11 @@ abstract interface class CameraAwareMapProvider {
   Future<void> restoreCamera(MapCameraState state);
 }
 
+/// Optional capability. Offline providers keep their current location styling.
+abstract interface class UserHeadingMapProvider {
+  Future<void> setUserHeading(double? heading);
+}
+
 /// UI and destination math depend on this contract, never on a map SDK type.
 abstract class MapProvider {
   Widget buildMap({

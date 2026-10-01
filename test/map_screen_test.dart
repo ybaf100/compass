@@ -59,7 +59,11 @@ class _Store implements DestinationStore {
   }
 }
 
-class _Map implements MapProvider, CameraAwareMapProvider {
+class _Map implements MapProvider, CameraAwareMapProvider, UserHeadingMapProvider {
+  final headings = <double?>[];
+  int overlayUpdates = 0;
+  @override
+  Future<void> setUserHeading(double? heading) async { headings.add(heading); }
   MapCameraState? state;
   Destination? destination;
   GeoPoint? candidate;
@@ -89,9 +93,9 @@ class _Map implements MapProvider, CameraAwareMapProvider {
     state = MapCameraState(point, zoom: zoom ?? state?.zoom ?? 14);
   }
   @override
-  Future<void> setCandidate(GeoPoint? value) async { candidate = value; }
+  Future<void> setCandidate(GeoPoint? value) async { candidate = value; overlayUpdates++; }
   @override
-  Future<void> setDestination(Destination? value) async { destination = value; }
+  Future<void> setDestination(Destination? value) async { destination = value; overlayUpdates++; }
   @override
   void setPinReveal(double progress) {}
   @override
@@ -129,6 +133,29 @@ class _Tiles implements OfflineTileBackend {
 }
 
 void main() {
+  testWidgets('heading listener uses filtered values without resending destination/candidate', (tester) async {
+    final controller = DestinationController(locationProvider: _Location(),
+      headingProvider: _Heading(), networkMonitor: _Network(), store: _Store());
+    final map = _Map();
+    final error = ValueNotifier<KakaoFailure?>(null);
+    await tester.pumpWidget(MaterialApp(home: MapScreen(controller: controller,
+      mapProvider: map, mapConfigured: true, mapError: error)));
+    await tester.pump();
+    await tester.pump();
+    final count = map.overlayUpdates;
+    controller.heading.value = const HeadingReading(degrees: 270, isTrueNorth: false);
+    controller.filteredHeading.value = 359;
+    controller.filteredHeading.value = 0;
+    await tester.pump();
+    expect(map.headings.skip(map.headings.length - 2), [359, 0]);
+    expect(map.headings, isNot(contains(270)));
+    expect(map.overlayUpdates, count);
+    await tester.pumpWidget(const SizedBox.shrink());
+    final calls = map.headings.length;
+    controller.filteredHeading.value = 45;
+    expect(map.headings.length, calls);
+    controller.dispose(); error.dispose();
+  });
   testWidgets('compact header opens service status without overflow',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 700));

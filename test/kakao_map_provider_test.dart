@@ -41,6 +41,76 @@ void main() {
   const own = GeoPoint(37.5, 127.0);
   const friend = GeoPoint(37.51, 127.01);
 
+  testWidgets('user heading is filtered input, coalesced, and changes no unrelated overlays', (tester) async {
+    final bridge = FakeKakaoBridge();
+    final provider = KakaoMapProvider(appKey: 'test', bridge: bridge);
+    provider.buildMap(bottomPadding: 0, onPicked: (_) {},
+      onNamedPlacePicked: (_, _) {}, onLoaded: () {}, onGesture: () {});
+    bridge.emit({'type': 'attached'});
+    bridge.emit({'type': 'loaded'});
+    await provider.setDestination(Destination(point: friend, createdAt: DateTime.utc(2026)));
+    await provider.setMembers([MapMemberOverlay(id: 'f1', name: 'friend', point: friend,
+      updatedAt: DateTime.utc(2026), isStale: false)]);
+    await provider.setSharedPings(const [MapPingOverlay(id: 'p1', point: own, label: 'Ping')]);
+    await provider.setUserLocation(const LocationFix(point: own,
+      accuracyMeters: 5, altitudeMeters: 0), follow: false);
+    await tester.pump(const Duration(milliseconds: 50));
+    final overlayCount = bridge.calls.where((c) => c.$1 == 'overlays').length;
+    final before = bridge.calls.length;
+    for (var value = 0; value < 100; value++) { await provider.setUserHeading(value.toDouble()); }
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(bridge.calls.skip(before).map((c) => c.$1), ['userHeading']);
+    expect(bridge.calls.last.$2['heading'], 99);
+    expect(bridge.calls.where((c) => c.$1 == 'overlays').length, overlayCount);
+    await provider.setUserLocation(const LocationFix(point: own,
+      accuracyMeters: 5, altitudeMeters: 0), follow: false);
+    expect(bridge.markers.first['heading'], 99);
+    await provider.setUserHeading(null);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(bridge.calls.last.$1, 'userHeading');
+    expect(bridge.calls.last.$2, {'heading': null});
+    provider.dispose();
+  });
+
+  testWidgets('native camera event changes display heading without resending overlays', (tester) async {
+    final bridge = FakeKakaoBridge();
+    final provider = KakaoMapProvider(appKey: 'test', bridge: bridge);
+    provider.buildMap(bottomPadding: 0, onPicked: (_) {},
+      onNamedPlacePicked: (_, _) {}, onLoaded: () {}, onGesture: () {});
+    bridge.emit({'type': 'attached'});
+    await provider.setUserHeading(90);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(provider.displayedUserHeading, 90);
+    final count = bridge.calls.length;
+    bridge.emit({'type': 'camera', 'latitude': own.latitude, 'longitude': own.longitude,
+      'zoom': 14, 'bearing': 45.0});
+    expect(provider.displayedUserHeading, 45);
+    expect(bridge.calls.length, count);
+    provider.dispose();
+  });
+
+  testWidgets('heading survives view reset and stops sending after disposal', (tester) async {
+    final bridge = FakeKakaoBridge();
+    final provider = KakaoMapProvider(appKey: 'test', bridge: bridge);
+    provider.buildMap(bottomPadding: 0, onPicked: (_) {},
+      onNamedPlacePicked: (_, _) {}, onLoaded: () {}, onGesture: () {});
+    bridge.emit({'type': 'attached'});
+    await provider.setUserHeading(359);
+    provider.reset();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(bridge.calls.where((c) => c.$1 == 'userHeading'), isEmpty);
+    provider.buildMap(bottomPadding: 0, onPicked: (_) {},
+      onNamedPlacePicked: (_, _) {}, onLoaded: () {}, onGesture: () {});
+    bridge.emit({'type': 'attached'});
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(bridge.calls.lastWhere((c) => c.$1 == 'userHeading').$2['heading'], 359);
+    await provider.setUserHeading(0);
+    final count = bridge.calls.length;
+    provider.dispose();
+    await tester.pump(const Duration(seconds: 1));
+    expect(bridge.calls.length, count);
+  });
+
   test('native auth success lifecycle diagnostics are retained through loaded', () async {
     final bridge = FakeKakaoBridge();
     final provider = KakaoMapProvider(appKey: 'never-record-key', bridge: bridge);

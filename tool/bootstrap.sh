@@ -15,6 +15,9 @@ cp platform_overrides/android/MainActivity.kt \
   android/app/src/main/kotlin/com/ybaf100/compass/MainActivity.kt
 cp platform_overrides/android/KakaoMapPlatformView.kt \
   android/app/src/main/kotlin/com/ybaf100/compass/KakaoMapPlatformView.kt
+mkdir -p android/app/src/test/kotlin/com/ybaf100/compass
+cp platform_overrides/android/KakaoMarkerGeometryTest.kt \
+  android/app/src/test/kotlin/com/ybaf100/compass/KakaoMarkerGeometryTest.kt
 # Flutter's generated class uses the project name; only the permanent package
 # path may contain an Activity after regeneration (including older checkouts).
 rm -f android/app/src/main/kotlin/com/ybaf100/destination_compass/MainActivity.kt

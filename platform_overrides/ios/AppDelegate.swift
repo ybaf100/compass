@@ -82,6 +82,11 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
   private var layer: LabelLayer?
   private var pois: [String: Poi] = [:]
   private var kinds: [String: String] = [:]
+  private var userHeading: Double?
+  private var userHasOrientation = false
+  private var cameraHeadingLink: CADisplayLink?
+  private lazy var cameraHeadingTarget = KakaoHeadingFrameTarget(owner: self)
+  private var cameraMoving = false
   private var markers: [[String: Any]] = []
   private var pendingCamera: [String: Any]?
   private var bottomPadding: CGFloat = 0
@@ -136,6 +141,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
       self.scheduleAuthRetry()
       self.activateIfAllowed()
       self.watchEngineIfNeeded()
+      self.updateUserHeading(animated: false)
     }
     backgroundObserver = NotificationCenter.default.addObserver(
       forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
@@ -144,6 +150,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
       self.authRetry?.cancel()
       self.authRetry = nil
       self.cancelEngineWatch()
+      self.stopCameraHeadingWatch()
       self.controller?.pauseEngine()
       self.observeEngineState()
     }
@@ -156,6 +163,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
     disposed = true
     authRetry?.cancel()
     cancelEngineWatch()
+    stopCameraHeadingWatch()
     host.onLayout = nil
     lifecycle.onStage = nil
     if let foregroundObserver { NotificationCenter.default.removeObserver(foregroundObserver) }
@@ -307,6 +315,12 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
       markers = ((call.arguments as? [String: Any])?["markers"] as? [[String: Any]]) ?? []
       applyMarkers()
       result(nil)
+    case "userHeading":
+      let value = (call.arguments as? [String: Any])?["heading"] as? Double
+      userHeading = value?.isFinite == true ? value : nil
+      updateUserHeading(animated: true)
+      if cameraMoving { startCameraHeadingWatch() }
+      result(nil)
     case "camera":
       pendingCamera = call.arguments as? [String: Any]
       if let pendingCamera { applyCamera(pendingCamera) }
@@ -381,12 +395,13 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
       competitionType: .none, competitionUnit: .poi, orderType: .rank, zOrder: 10))
     layer?.setClickable(true)
     let palette: [String: UIColor] = [
-      "user": .systemBlue, "candidate": .systemIndigo, "destination": .systemOrange,
+      "user": .systemBlue, "userHeading": .systemBlue,
+      "candidate": .systemIndigo, "destination": .systemOrange,
       "member": .systemTeal, "stale": .systemGray, "ping": .systemYellow]
     for (kind, color) in palette {
-      let icon = PoiIconStyle(symbol: iconImage(color),
+      let icon = PoiIconStyle(symbol: iconImage(color, kind: kind),
         anchorPoint: CGPoint(x: 0.5, y: 0.5))
-      let text = TextStyle(fontSize: 15, fontColor: .white,
+      let text = TextStyle(fontSize: 12, fontColor: .white,
         strokeThickness: 2, strokeColor: .black)
       let line = PoiTextLineStyle(textStyle: text)
       let style = PerLevelPoiStyle(iconStyle: icon,
@@ -413,13 +428,40 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
     updateLayout()
   }
 
-  private func iconImage(_ color: UIColor) -> UIImage {
-    let renderer = UIGraphicsImageRenderer(size: CGSize(width: 36, height: 36))
+  private func iconImage(_ color: UIColor, kind: String) -> UIImage {
+    let side = CGFloat(KakaoMarkerGeometry.canvas(kind))
+    let diameter = CGFloat(KakaoMarkerGeometry.diameter(kind))
+    let center = side / 2
+    // SDK scales logical icon assets for its display. Avoid a second Retina
+    // multiplication; transparent member padding keeps a forgiving tap area.
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format)
     return renderer.image { _ in
+      if kind == "userHeading" {
+        let cone = UIBezierPath()
+        cone.move(to: CGPoint(x: center, y: center))
+        cone.addLine(to: CGPoint(x: center - 12, y: 4))
+        cone.addQuadCurve(to: CGPoint(x: center + 12, y: 4),
+          controlPoint: CGPoint(x: center, y: -2))
+        cone.close()
+        color.withAlphaComponent(0.22).setFill()
+        cone.fill()
+        let arrow = UIBezierPath()
+        arrow.move(to: CGPoint(x: center, y: 3))
+        arrow.addLine(to: CGPoint(x: center + 5, y: 11))
+        arrow.addLine(to: CGPoint(x: center, y: 9))
+        arrow.addLine(to: CGPoint(x: center - 5, y: 11))
+        arrow.close()
+        color.setFill()
+        arrow.fill()
+      }
       UIColor.white.setFill()
-      UIBezierPath(ovalIn: CGRect(x: 1, y: 1, width: 34, height: 34)).fill()
+      UIBezierPath(ovalIn: CGRect(x: center - diameter/2, y: center - diameter/2,
+        width: diameter, height: diameter)).fill()
       color.setFill()
-      UIBezierPath(ovalIn: CGRect(x: 4, y: 4, width: 28, height: 28)).fill()
+      UIBezierPath(ovalIn: CGRect(x: center - diameter/2 + 2, y: center - diameter/2 + 2,
+        width: diameter - 4, height: diameter - 4)).fill()
     }
   }
 
@@ -437,25 +479,79 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
         let lon = marker["longitude"] as? Double else { continue }
       let position = MapPoint(longitude: lon, latitude: lat)
       let kind = marker["kind"] as? String ?? "candidate"
-      let styleID = "compass-\(kind)"
-      let caption = marker["label"] as? String ?? ""
+      if id == "user", marker.keys.contains("heading") {
+        let value = marker["heading"] as? Double
+        userHeading = value?.isFinite == true ? value : nil
+      }
+      let displayKind = id == "user" && userHeading != nil ? "userHeading" : kind
+      let styleID = "compass-\(displayKind)"
+      let caption = id == "user" ? "" : marker["label"] as? String ?? ""
       if let poi = pois[id] {
         // Dart's MemberMarkerMotion supplies intermediate positions.
         poi.moveAt(position, duration: 0)
-        if kinds[id] != kind || !caption.isEmpty {
+        if kinds[id] != displayKind || !caption.isEmpty {
           poi.changeTextAndStyle(texts: [PoiText(text: caption, styleIndex: 0)],
             styleID: styleID)
         }
       } else {
         let options = PoiOptions(styleID: styleID, poiID: id)
         options.clickable = id.hasPrefix("member:")
+        if id == "user" {
+          options.transformType = .absoluteRotation
+          userHasOrientation = false
+        }
         options.addText(PoiText(text: caption, styleIndex: 0))
         let poi = layer.addPoi(option: options, at: position)
         poi?.show()
         if let poi { pois[id] = poi }
       }
-      kinds[id] = kind
+      kinds[id] = displayKind
     }
+    updateUserHeading(animated: false)
+  }
+
+  private func updateUserHeading(animated: Bool) {
+    guard let map, let poi = pois["user"] else { return }
+    let kind = userHeading == nil ? "user" : "userHeading"
+    if kinds["user"] != kind {
+      poi.changeTextAndStyle(texts: [], styleID: "compass-\(kind)")
+      kinds["user"] = kind
+    }
+    guard let heading = userHeading else {
+      poi.rotateAt(0, duration: 0)
+      userHasOrientation = false
+      stopCameraHeadingWatch()
+      return
+    }
+    let bearing = -map.rotationAngle * 180 / .pi
+    let display = KakaoMarkerGeometry.display(heading: heading, cameraBearing: bearing)
+    // AbsoluteRotation excludes camera roll. Compensate exactly once here;
+    // Kakao iOS uses counter-clockwise radians, unlike the app's convention.
+    let current = -poi.orientation * 180 / .pi
+    let target = KakaoMarkerGeometry.target(from: current, to: display)
+    if userHasOrientation && abs(target - current) < 0.15 { return }
+    poi.rotateAt(-target * .pi / 180, duration: animated && userHasOrientation ? 90 : 0)
+    userHasOrientation = true
+  }
+
+  private func startCameraHeadingWatch() {
+    guard cameraHeadingLink == nil, userHeading != nil, !disposed, lifecycle.foreground else { return }
+    let link = CADisplayLink(target: cameraHeadingTarget, selector: #selector(KakaoHeadingFrameTarget.tick))
+    cameraHeadingLink = link
+    link.add(to: .main, forMode: .common)
+  }
+
+  private func stopCameraHeadingWatch() {
+    cameraHeadingLink?.invalidate()
+    cameraHeadingLink = nil
+  }
+
+  fileprivate func cameraHeadingFrame() {
+    guard cameraMoving, map != nil, !disposed, lifecycle.foreground else {
+      stopCameraHeadingWatch()
+      return
+    }
+    updateUserHeading(animated: false)
   }
 
   private func applyCamera(_ camera: [String: Any]) {
@@ -496,10 +592,24 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
   }
 
   func cameraWillMove(kakaoMap: KakaoMap, by: MoveBy) {
+    cameraMoving = true
+    startCameraHeadingWatch()
     if by != .notUserAction { event(["type": "gesture"]) }
   }
 
-  func cameraDidStopped(kakaoMap: KakaoMap, by: MoveBy) { emitCamera() }
+  func cameraDidStopped(kakaoMap: KakaoMap, by: MoveBy) {
+    cameraMoving = false
+    stopCameraHeadingWatch()
+    updateUserHeading(animated: false)
+    emitCamera()
+  }
+}
+
+/// Weak display-link target: a native view cannot be retained by its frame loop.
+private final class KakaoHeadingFrameTarget: NSObject {
+  weak var owner: KakaoMapPlatformView?
+  init(owner: KakaoMapPlatformView) { self.owner = owner }
+  @objc func tick() { owner?.cameraHeadingFrame() }
 }
 
 private final class HeadingBridge: NSObject, FlutterStreamHandler, CLLocationManagerDelegate {

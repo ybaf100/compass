@@ -75,7 +75,13 @@ flutter build ios --simulator --debug --dart-define=KAKAO_NATIVE_APP_KEY=발급�
 
 ## 사용법
 
-지도에서 원하는 곳을 터치하거나 길게 눌러 선택합니다. 위치 확인 카드에서 **목적지로 설정**을 누릅니다. 지도 상단의 내 위치 버튼으로 따라가기를 다시 켭니다. 하단 패널을 위로 끌면 전체화면 나침반으로, 아래로 끌면 지도로 돌아갑니다. 목적지 해제는 지도 상단 버튼이나 전체화면의 해제 버튼에서 가능합니다. 마지막 목적지는 기기에 저장됩니다.
+지도에서 원하는 곳을 터치하거나 길게 눌러 선택합니다. 위치 확인 카드에서 **목적지로 설정**을 누릅니다. 지도 상단의 내 위치 버튼으로 따라가기를 다시 켭니다. 하단 패널을 위로 끌면 전체화면 나침반으로, 아래로 끌면 지도로 돌아갑니다. 개인 목적지 해제는 지도 상단 버튼을 사용하고, 내 목적지·공유 목적지·친구 따라가기 전환은 친구방 UI에서 합니다. 마지막 목적지는 기기에 저장됩니다.
+
+Compass는 접힘·확장 중간·전체화면 모두 **방향 화살표와 거리만** 표시합니다. 목적지 이름, 모드, notice, 북 기준 설명, 상세 정보와 해제 버튼은 Compass에서 표시하지 않습니다. 목적지 없음과 방향 센서 사용 불가만 간단히 안내합니다. 친구의 오래된 위치 정보는 친구방·친구 상세 UI에서 확인합니다.
+
+Kakao 마커의 보이는 지름은 목적지 22, 친구/오래된 친구/Ping 18, candidate 16 logical pixels입니다. 내 위치는 16 지름의 중심 점과 방향 cone를 40 크기 canvas에 그립니다. 친구 마커는 투명한 44 크기 canvas로 터치 영역을 확보합니다. Android에서는 이미 density를 반영한 bitmap에 SDK density scaling을 다시 적용하지 않습니다. **Mapbox 마커 스타일과 크기는 변경하지 않습니다.** 실제 터치 범위와 가독성은 기기에서 확인해야 합니다.
+
+내 위치 방향은 기존 filteredHeading을 optional provider capability로 전달합니다. Kakao bridge는 최신 값만 최대 초당 20회 전달하고 동시에 한 요청만 실행하며, 친구/Ping/목적지 overlay는 재전송하지 않습니다. native SDK의 카메라 bearing을 읽어 `normalize(deviceHeading - cameraBearing)`을 적용합니다. iOS의 반시계 radians와 Android의 시계 radians는 공통 시계 degrees로 변환합니다. absolute-rotation user icon에는 최단 각도 기반 짧은 90ms 회전을 적용하고, 지도 이동 중에만 CADisplayLink/Choreographer에서 카메라 방향을 갱신합니다. pause/dispose에서 callback을 정리합니다. 지도 회전 보정과 359°/0° 방향은 실기기 재검증 대상입니다.
 
 ## 구조
 
@@ -89,7 +95,7 @@ flutter build ios --simulator --debug --dart-define=KAKAO_NATIVE_APP_KEY=발급�
 | `lib/ui` | 지도 화면, 스와이프 패널, 프레임 기반 화살표 애니메이션 |
 | `platform_overrides` | Android/iOS Kakao Maps SDK v2 브리지, 회전 벡터 및 Core Location heading |
 
-방위각은 진북 기준입니다. Android는 GPS 좌표로 자기편각을 보정하고, iOS는 Core Location trueHeading을 우선합니다. 보정할 GPS가 없거나 trueHeading이 제공되지 않으면 자기북 기준임을 화면에 알립니다. 지도 네트워크 오류 중에도 저장된 목적지와 새 GPS/센서 값은 별도로 유지됩니다.
+방위각은 진북 기준입니다. Android는 GPS 좌표로 자기편각을 보정하고, iOS는 Core Location trueHeading을 우선합니다. 보정할 GPS가 없거나 trueHeading이 제공되지 않으면 자기북을 사용하므로 오차가 생길 수 있습니다. Compass에는 북 기준 설명을 표시하지 않습니다. 지도 네트워크 오류 중에도 저장된 목적지와 새 GPS/센서 값은 별도로 유지됩니다.
 
 온라인 지도는 공식 Kakao Maps Android v2 `2.15.2` 및 iOS v2 `2.12.19`를 네이티브 PlatformView로 표시합니다. Dart의 `KakaoMapProvider`와 별도 브리지 바깥에는 SDK 타입이 노출되지 않습니다. 오프라인 지도는 Mapbox입니다. 네트워크 연결 유형은 실제 인터넷 연결을 보증하지 않으므로 지도 로딩 시간 초과 및 인증 오류도 따로 표시합니다.
 

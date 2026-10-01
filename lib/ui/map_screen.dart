@@ -69,10 +69,7 @@ class _MapScreenState extends State<MapScreen>
     duration: const Duration(milliseconds: 240),
     value: 1,
   )..addListener(() => _activeMap?.setPinReveal(_pinReveal.value));
-  late final Listenable _headingChanges = Listenable.merge([
-    widget.controller.heading,
-    widget.controller.filteredHeading,
-  ]);
+  late final Listenable _headingChanges = widget.controller.filteredHeading;
   late final MemberMarkerMotion _memberMotion = MemberMarkerMotion(
     vsync: this,
     onFrame: (members) {
@@ -106,6 +103,7 @@ class _MapScreenState extends State<MapScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     widget.controller.addListener(_onControllerChanged);
+    widget.controller.filteredHeading.addListener(_onUserHeadingChanged);
     widget.roomController?.addListener(_onRoomChanged);
     widget.navigationController?.addListener(_onControllerChanged);
     widget.mapMode?.addListener(_onMapModeChanged);
@@ -172,6 +170,14 @@ class _MapScreenState extends State<MapScreen>
       ));
     }
     if (mounted) setState(() {});
+  }
+
+  void _onUserHeadingChanged() {
+    final map = _activeMap;
+    if (map is UserHeadingMapProvider) {
+      unawaited((map as UserHeadingMapProvider)
+          .setUserHeading(widget.controller.filteredHeading.value));
+    }
   }
 
   void _onRoomChanged() {
@@ -262,6 +268,7 @@ class _MapScreenState extends State<MapScreen>
   void _syncMapOverlays() {
     final map = _activeMap;
     if (map == null) return;
+    _onUserHeadingChanged();
     final destination = widget.navigationController == null
         ? widget.controller.destination
         : widget.navigationController!.target?.asDestination;
@@ -351,6 +358,7 @@ class _MapScreenState extends State<MapScreen>
     _mapTimeout?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_onControllerChanged);
+    widget.controller.filteredHeading.removeListener(_onUserHeadingChanged);
     widget.roomController?.removeListener(_onRoomChanged);
     widget.navigationController?.removeListener(_onControllerChanged);
     widget.mapMode?.removeListener(_onMapModeChanged);
@@ -439,19 +447,8 @@ class _MapScreenState extends State<MapScreen>
                         destinationBearing: widget.navigationController == null
                             ? widget.controller.destinationBearing
                             : widget.navigationController!.bearing,
-                        heading: widget.controller.heading.value,
                         filteredHeading:
                             widget.controller.filteredHeading.value,
-                        modeLabel: widget.navigationController?.target?.modeLabel,
-                        notice: widget.navigationController?.target?.notice,
-                        emptyMessage: widget.navigationController?.target?.notice,
-                        clearLabel: widget.navigationController == null ||
-                            widget.navigationController!.mode == TargetMode.personal
-                            ? '목적지 해제' : '내 목적지로 전환',
-                        onClear: widget.navigationController == null ||
-                            widget.navigationController!.mode == TargetMode.personal
-                            ? widget.controller.clearDestination
-                            : widget.navigationController!.selectPersonal,
                       ),
                     ),
                   ),

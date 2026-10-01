@@ -5,7 +5,9 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.view.View
+import android.view.Choreographer
 import com.kakao.vectormap.KakaoMap
 import com.kakao.vectormap.KakaoMapReadyCallback
 import com.kakao.vectormap.KakaoMapSdk
@@ -20,6 +22,7 @@ import com.kakao.vectormap.label.LabelOptions
 import com.kakao.vectormap.label.LabelStyles
 import com.kakao.vectormap.label.LabelStyle
 import com.kakao.vectormap.label.LabelTextBuilder
+import com.kakao.vectormap.label.TransformMethod
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -64,6 +67,17 @@ internal class KakaoMapPlatformView(
     private var failed = false
     private val keyPresent = appKey.isNotBlank()
     private var sdkInitialized = false
+    private var userHeading: Double? = null
+    private var userHasOrientation = false
+    private var cameraMoving = false
+    private var watchingCameraHeading = false
+    private val cameraHeadingFrame = object : Choreographer.FrameCallback {
+        override fun doFrame(frameTimeNanos: Long) {
+            if (disposed || !cameraMoving || map == null) { stopCameraHeadingWatch(); return }
+            updateUserHeading(false)
+            if (watchingCameraHeading) Choreographer.getInstance().postFrameCallback(this)
+        }
+    }
 
     init {
         channel.setMethodCallHandler(::handle)
@@ -97,9 +111,16 @@ internal class KakaoMapPlatformView(
                             true
                         }
                         kakaoMap.setOnCameraMoveStartListener { _, gesture ->
+                            cameraMoving = true
+                            startCameraHeadingWatch()
                             if (gesture != GestureType.Unknown) event(mapOf("type" to "gesture"))
                         }
-                        kakaoMap.setOnCameraMoveEndListener { _, position, _ -> cameraEvent(position) }
+                        kakaoMap.setOnCameraMoveEndListener { _, position, _ ->
+                            cameraMoving = false
+                            stopCameraHeadingWatch()
+                            updateUserHeading(false)
+                            cameraEvent(position)
+                        }
                         installStyles(kakaoMap)
                         applyPadding()
                         applyMarkers()
@@ -131,6 +152,11 @@ internal class KakaoMapPlatformView(
                         .mapNotNull { it as? Map<*, *> }
                     applyMarkers()
                 }
+                "userHeading" -> {
+                    userHeading = call.argument<Number>("heading")?.toDouble()?.takeIf { it.isFinite() }
+                    updateUserHeading(true)
+                    if (cameraMoving) startCameraHeadingWatch()
+                }
                 "camera" -> {
                     pendingCamera = call.arguments as? Map<*, *>
                     pendingCamera?.let { applyCamera(it) }
@@ -148,27 +174,52 @@ internal class KakaoMapPlatformView(
     }
 
     private fun installStyles(kakaoMap: KakaoMap) {
-        val palette = mapOf("user" to 0xFF328DFF.toInt(),
+        val palette = mapOf("user" to 0xFF328DFF.toInt(), "userHeading" to 0xFF328DFF.toInt(),
             "candidate" to 0xFF3970DF.toInt(), "destination" to 0xFFED6541.toInt(),
             "member" to 0xFF2EBF9F.toInt(), "stale" to 0xFF8796A0.toInt(),
             "ping" to 0xFFF0AF40.toInt())
         val manager = kakaoMap.labelManager ?: return
         for ((kind, color) in palette) {
-            val style = LabelStyles.from(LabelStyle.from(icon(color))
-                .setTextStyles(13, Color.WHITE, 3, Color.BLACK))
+            val density = context.resources.displayMetrics.density
+            // Bitmap is already rendered at device density. Applying the SDK's
+            // default dpScale again would make icons much too large.
+            val style = LabelStyles.from(LabelStyle.from(icon(color, kind))
+                .setApplyDpScale(false).setAnchorPoint(0.5f, 0.5f)
+                .setTextStyles((12 * density).toInt(), Color.WHITE,
+                    (2 * density).toInt(), Color.BLACK))
             manager.addLabelStyles(style)?.let { styles[kind] = it }
         }
     }
 
-    private fun icon(color: Int): Bitmap {
-        val size = (32 * context.resources.displayMetrics.density).toInt().coerceAtLeast(32)
+    private fun icon(color: Int, kind: String): Bitmap {
+        val density = context.resources.displayMetrics.density
+        val side = KakaoMarkerGeometry.canvas(kind).toFloat()
+        val size = kotlin.math.ceil(side * density).toInt().coerceAtLeast(1)
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        bitmap.density = Bitmap.DENSITY_NONE
         val canvas = Canvas(bitmap)
+        canvas.scale(density, density)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val center = side / 2
+        if (kind == "userHeading") {
+            val cone = Path().apply {
+                moveTo(center, center); lineTo(center - 12, 4f)
+                quadTo(center, -2f, center + 12, 4f); close()
+            }
+            paint.color = color; paint.alpha = 56
+            canvas.drawPath(cone, paint)
+            paint.alpha = 255
+            val arrow = Path().apply {
+                moveTo(center, 3f); lineTo(center + 5, 11f)
+                lineTo(center, 9f); lineTo(center - 5, 11f); close()
+            }
+            canvas.drawPath(arrow, paint)
+        }
+        val diameter = KakaoMarkerGeometry.diameter(kind).toFloat()
         paint.color = Color.WHITE
-        canvas.drawCircle(size / 2f, size / 2f, size * 0.44f, paint)
+        canvas.drawCircle(center, center, diameter / 2, paint)
         paint.color = color
-        canvas.drawCircle(size / 2f, size / 2f, size * 0.36f, paint)
+        canvas.drawCircle(center, center, diameter / 2 - 2, paint)
         return bitmap
     }
 
@@ -185,24 +236,67 @@ internal class KakaoMapPlatformView(
             val longitude = (marker["longitude"] as? Number)?.toDouble() ?: continue
             val position = LatLng.from(latitude, longitude)
             val kind = marker["kind"] as? String ?: "candidate"
-            val style = styles[kind] ?: continue
-            val caption = marker["label"] as? String ?: ""
+            if (id == "user" && marker.containsKey("heading")) {
+                userHeading = (marker["heading"] as? Number)?.toDouble()?.takeIf { it.isFinite() }
+            }
+            val displayKind = if (id == "user" && userHeading != null) "userHeading" else kind
+            val style = styles[displayKind] ?: continue
+            val caption = if (id == "user") "" else marker["label"] as? String ?: ""
             val existing = labels[id]
             if (existing == null) {
                 labels[id] = layer.addLabel(LabelOptions.from(id, position)
                     .setStyles(style).setTexts(LabelTextBuilder().setTexts(caption))
+                    .setTransform(if (id == "user") TransformMethod.AbsoluteRotation else TransformMethod.Default)
                     .setClickable(id.startsWith("member:")))
+                if (id == "user") userHasOrientation = false
             } else {
                 if (existing.position != position) {
                     // Dart's MemberMarkerMotion already interpolates short moves.
                     existing.moveTo(position)
                 }
-                if (kinds[id] != kind) existing.setStyles(style)
+                if (kinds[id] != displayKind) existing.setStyles(style)
                 existing.setTexts(LabelTextBuilder().setTexts(caption))
                 existing.invalidate()
             }
-            kinds[id] = kind
+            kinds[id] = displayKind
         }
+        updateUserHeading(false)
+    }
+
+    private fun updateUserHeading(animated: Boolean) {
+        val kakaoMap = map ?: return
+        val label = labels["user"] ?: return
+        val kind = if (userHeading == null) "user" else "userHeading"
+        if (kinds["user"] != kind) {
+            styles[kind]?.let { label.setStyles(it); label.invalidate() }
+            kinds["user"] = kind
+        }
+        val heading = userHeading
+        if (heading == null) {
+            label.rotateTo(0f); userHasOrientation = false
+            stopCameraHeadingWatch(); return
+        }
+        val camera = kakaoMap.cameraPosition ?: return
+        val bearing = camera.rotationAngle * 180 / PI
+        val display = KakaoMarkerGeometry.display(heading, bearing)
+        val current = label.rotation * 180 / PI
+        val target = KakaoMarkerGeometry.target(current, display)
+        if (userHasOrientation && kotlin.math.abs(target - current) < 0.15) return
+        // AbsoluteRotation excludes camera rotation; the SDK receives a
+        // compensated screen angle, not a raw sensor value.
+        label.rotateTo((target * PI / 180).toFloat(), if (animated && userHasOrientation) 90 else 0)
+        userHasOrientation = true
+    }
+
+    private fun startCameraHeadingWatch() {
+        if (watchingCameraHeading || userHeading == null || disposed) return
+        watchingCameraHeading = true
+        Choreographer.getInstance().postFrameCallback(cameraHeadingFrame)
+    }
+
+    private fun stopCameraHeadingWatch() {
+        watchingCameraHeading = false
+        Choreographer.getInstance().removeFrameCallback(cameraHeadingFrame)
     }
 
     private fun applyCamera(raw: Map<*, *>) {
@@ -239,16 +333,34 @@ internal class KakaoMapPlatformView(
         channel.invokeMethod("event", diagnostic)
     }
 
-    fun pause() { if (!disposed) mapView.pause() }
-    fun resume() { if (!disposed) mapView.resume() }
+    fun pause() { stopCameraHeadingWatch(); if (!disposed) mapView.pause() }
+    fun resume() { if (!disposed) { mapView.resume(); updateUserHeading(false) } }
     override fun getView(): View = mapView
     override fun dispose() {
         if (disposed) return
         disposed = true
+        stopCameraHeadingWatch()
         channel.setMethodCallHandler(null)
         mapView.finish()
         map = null
         labels.clear()
         onDisposed(this)
     }
+}
+
+internal object KakaoMarkerGeometry {
+    fun diameter(kind: String): Double = when (kind) {
+        "destination" -> 22.0
+        "member", "stale", "ping" -> 18.0
+        "user", "userHeading" -> 16.0
+        else -> 16.0
+    }
+    fun canvas(kind: String): Double = when (kind) {
+        "user", "userHeading" -> 40.0
+        "member", "stale" -> 44.0
+        else -> diameter(kind) + 4
+    }
+    fun normalize(value: Double) = ((value % 360) + 360) % 360
+    fun display(heading: Double, bearing: Double) = normalize(heading - bearing)
+    fun target(current: Double, desired: Double) = current + normalize(desired - current + 180) - 180
 }

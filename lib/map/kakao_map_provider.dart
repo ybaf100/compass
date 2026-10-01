@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/geo_point.dart';
@@ -8,9 +10,10 @@ import 'kakao_map_state.dart';
 import 'kakao_diagnostics.dart';
 import '../core/diagnostics.dart';
 import 'map_provider.dart';
+import 'map_user_heading.dart';
 
 /// Online map adapter. All native traffic is batched as stable-ID overlays.
-class KakaoMapProvider implements MapProvider, CameraAwareMapProvider {
+class KakaoMapProvider implements MapProvider, CameraAwareMapProvider, UserHeadingMapProvider {
   KakaoMapProvider({required this.appKey, this.onFailure, KakaoMapBridge? bridge})
       : _bridge = bridge ?? PlatformKakaoMapBridge(),
         diagnostics = ValueNotifier(KakaoDiagnostics(
@@ -41,6 +44,12 @@ class KakaoMapProvider implements MapProvider, CameraAwareMapProvider {
   bool _attached = false;
   bool _disposed = false;
   bool _follow = true;
+  double? _userHeading;
+  double? get displayedUserHeading => MapUserHeading.display(_userHeading, _camera?.bearing ?? 0);
+  static const headingUpdateInterval = Duration(milliseconds: 50);
+  Timer? _headingTimer;
+  bool _headingDirty = false;
+  bool _headingSending = false;
   double _pinReveal = 1;
   double _bottomPadding = 0;
   int _generation = 0;
@@ -77,6 +86,8 @@ class KakaoMapProvider implements MapProvider, CameraAwareMapProvider {
       switch (event['type']) {
         case 'attached':
           _attached = true;
+          _headingDirty = true;
+          _scheduleHeading();
           _queue(() => _bridge.send('padding', {'bottom': _bottomPadding}))
               .catchError((Object _) {});
           _scheduleSync();
@@ -145,7 +156,8 @@ class KakaoMapProvider implements MapProvider, CameraAwareMapProvider {
     if (!_attached) return;
     await _bridge.send('overlays', {
       'markers': [
-        if (_location != null) _marker('user', _location!.point, '내 위치', 'user'),
+        if (_location != null) {..._marker('user', _location!.point, '내 위치', 'user'),
+          'heading': _userHeading},
         if (_candidate != null) _marker('candidate', _candidate!, '선택한 위치', 'candidate'),
         if (_destination != null && _pinReveal > 0.05)
           _marker('destination', _destination!.point,
@@ -225,6 +237,41 @@ class KakaoMapProvider implements MapProvider, CameraAwareMapProvider {
   }
 
   @override
+  Future<void> setUserHeading(double? heading) async {
+    if (_disposed) return;
+    final normalized = MapUserHeading.display(heading, 0);
+    if (normalized == _userHeading) return;
+    _userHeading = normalized;
+    _headingDirty = true;
+    _scheduleHeading();
+  }
+
+  void _scheduleHeading() {
+    if (!_attached || _disposed || _headingSending || _headingTimer != null) return;
+    // Latest-wins, <=20 calls/s, one in flight. No overlay reconciliation or
+    // camera movement is triggered by sensor events.
+    _headingTimer = Timer(headingUpdateInterval, () => unawaited(_flushHeading()));
+  }
+
+  Future<void> _flushHeading() async {
+    _headingTimer = null;
+    if (_disposed || !_attached || !_headingDirty) return;
+    final generation = _generation;
+    _headingDirty = false;
+    _headingSending = true;
+    try {
+      await _bridge.send('userHeading', {'heading': _userHeading});
+    } catch (_) {
+      diagnosticEvent('kakao.userHeading', 'bridgeFailure');
+    } finally {
+      if (!_disposed && generation == _generation) {
+        _headingSending = false;
+        if (_headingDirty) _scheduleHeading();
+      }
+    }
+  }
+
+  @override
   Future<void> setMembers(List<MapMemberOverlay> members) {
     _members = members;
     return _queue(_sync);
@@ -238,6 +285,10 @@ class KakaoMapProvider implements MapProvider, CameraAwareMapProvider {
 
   @override
   void reset() {
+    _headingTimer?.cancel();
+    _headingTimer = null;
+    _headingSending = false;
+    _headingDirty = true;
     _generation++;
     _ready = false;
     _attached = false;
