@@ -13,6 +13,7 @@ import '../map/map_provider.dart';
 import '../map/map_mode_controller.dart';
 import '../map/kakao_map_state.dart';
 import '../map/kakao_diagnostics.dart';
+import '../map/heading_diagnostics.dart';
 import '../map/member_marker_motion.dart';
 import '../offline/offline_map_controller.dart';
 import '../navigation/navigation_target.dart';
@@ -828,7 +829,8 @@ class _MapScreenState extends State<MapScreen>
       showDragHandle: true,
       builder: (context) => AnimatedBuilder(
         animation: Listenable.merge([widget.controller, widget.mapMode,
-          widget.mapError, widget.offlineMaps, widget.kakaoDiagnostics]),
+          widget.mapError, widget.offlineMaps, widget.kakaoDiagnostics,
+          widget.controller.heading, widget.controller.filteredHeading]),
         builder: (context, _) => ServiceStatusSheet(
         kakao: settings.kakaoStatus,
         supabase: settings.supabaseStatus,
@@ -840,6 +842,11 @@ class _MapScreenState extends State<MapScreen>
                 : _mapLoaded ? KakaoState.loaded : KakaoState.initializing),
         kakaoFailure: widget.mapMode?.failure ?? widget.mapError.value,
         kakaoDiagnostics: widget.kakaoDiagnostics?.value ?? const KakaoDiagnostics(),
+        headingDiagnostics: HeadingDiagnostics.snapshot(
+          reading: widget.controller.heading.value,
+          filteredHeading: widget.controller.filteredHeading.value,
+          cameraBearing: widget.mapProvider is CameraAwareMapProvider
+              ? (widget.mapProvider as CameraAwareMapProvider).cameraState?.bearing : null),
         supabaseInitialization: widget.supabaseInitialization,
         mapboxInitialization: widget.mapboxInitialization,
         mapboxFailed: widget.offlineMaps?.error != null ||

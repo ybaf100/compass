@@ -70,6 +70,10 @@ jobs:
         run: |
           swiftc -parse-as-library platform_overrides/ios/KakaoMarkerGeometry.swift tool/test_kakao_markers.swift -o "$RUNNER_TEMP/kakao-marker-tests"
           "$RUNNER_TEMP/kakao-marker-tests"
+      - name: Test production iOS heading orientation conversion
+        run: |
+          swiftc -parse-as-library platform_overrides/ios/HeadingOrientation.swift tool/test_heading_orientation.swift -o "$RUNNER_TEMP/heading-orientation-tests"
+          "$RUNNER_TEMP/heading-orientation-tests"
       - uses: subosito/flutter-action@v2
         with:
           channel: stable

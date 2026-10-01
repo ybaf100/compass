@@ -5,6 +5,7 @@ import unittest
 ROOT = Path(__file__).resolve().parent.parent
 SWIFT = (ROOT / "platform_overrides/ios/AppDelegate.swift").read_text()
 KOTLIN = (ROOT / "platform_overrides/android/KakaoMapPlatformView.kt").read_text()
+ORIENTATION = (ROOT / "platform_overrides/ios/HeadingOrientation.swift").read_text()
 
 
 class KakaoMarkerContractTests(unittest.TestCase):
@@ -60,9 +61,38 @@ class KakaoMarkerContractTests(unittest.TestCase):
 
     def test_ipad_interface_orientation_is_not_replaced_by_device_orientation(self):
         self.assertIn('switch scene?.interfaceOrientation', SWIFT)
-        for orientation in ('landscapeLeft', 'landscapeRight', 'portraitUpsideDown'):
-            self.assertIn(f'case .{orientation}: manager.headingOrientation = .{orientation}', SWIFT)
-        self.assertIn('default: manager.headingOrientation = .portrait', SWIFT)
+        self.assertIn('case .landscapeLeft: return .landscapeRight', ORIENTATION)
+        self.assertIn('case .landscapeRight: return .landscapeLeft', ORIENTATION)
+        self.assertIn('case .portrait: return .portrait', ORIENTATION)
+        self.assertIn('case .portraitUpsideDown: return .portraitUpsideDown', ORIENTATION)
+        self.assertIn('let changed = orientation.update(snapshot)', SWIFT)
+        self.assertIn('switch orientation.applied', SWIFT)
+        self.assertNotIn('UIDevice.current.orientation', SWIFT)
+        self.assertIn('default: snapshot = .unknown', SWIFT)
+
+    def test_heading_refreshes_initial_rotation_and_foreground_without_polling(self):
+        bridge = SWIFT.split('private final class HeadingBridge', 1)[1]
+        resume = bridge.split('@objc private func resume()', 1)[1].split('@objc private func pause()', 1)[0]
+        self.assertLess(resume.index('orientationChanged()'), resume.index('startUpdatingHeading()'))
+        for notification in ('UIDevice.orientationDidChangeNotification',
+                             'UIApplication.didBecomeActiveNotification',
+                             'UIScene.didActivateNotification'):
+            self.assertIn(notification, bridge)
+        self.assertIn('for delay in [0.15, 0.5]', bridge)
+        self.assertNotIn('Timer', bridge)
+        self.assertIn('orientationRefreshWork.forEach { $0.cancel() }', bridge)
+        self.assertIn('if refreshOrientation() { return }', bridge)
+        self.assertIn('heading.timestamp < appliedAt', bridge)
+
+    def test_heading_diagnostics_are_enum_only_and_angles_have_no_offsets(self):
+        bridge = SWIFT.split('private final class HeadingBridge', 1)[1]
+        self.assertIn('"interfaceOrientation": orientation.interface.rawValue', bridge)
+        self.assertIn('"headingOrientation": orientation.applied.rawValue', bridge)
+        self.assertIn('"heading": trueNorth ? heading.trueHeading : heading.magneticHeading', bridge)
+        self.assertNotIn('heading.trueHeading +', bridge)
+        self.assertNotIn('heading.trueHeading -', bridge)
+        self.assertNotIn('latitude', bridge)
+        self.assertNotIn('longitude', bridge)
 
     def test_prepare_return_remains_diagnostic_only(self):
         self.assertIn("lifecycle.prepareReturned(controller.prepareEngine())", SWIFT)

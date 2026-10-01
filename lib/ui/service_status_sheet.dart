@@ -6,6 +6,7 @@ import '../core/network/network_monitor.dart';
 import '../core/location/location_provider.dart';
 import '../map/kakao_map_state.dart';
 import '../map/kakao_diagnostics.dart';
+import '../map/heading_diagnostics.dart';
 
 /// Only the requested public Bundle ID and whitelisted SDK states are shown.
 /// Never accepts or renders keys, tokens, coordinates or raw SDK descriptions.
@@ -19,7 +20,8 @@ class ServiceStatusSheet extends StatelessWidget {
     this.mapboxFailed = false, this.locationAccess,
     this.locationPrecision = LocationPrecision.unknown, this.locationFailure,
     this.waitingForLocation = false,
-    this.kakaoDiagnostics = const KakaoDiagnostics()});
+    this.kakaoDiagnostics = const KakaoDiagnostics(),
+    this.headingDiagnostics = const HeadingDiagnostics()});
 
   final ConfigurationStatus kakao;
   final ConfigurationStatus supabase;
@@ -35,6 +37,7 @@ class ServiceStatusSheet extends StatelessWidget {
   final LocationFailure? locationFailure;
   final bool waitingForLocation;
   final KakaoDiagnostics kakaoDiagnostics;
+  final HeadingDiagnostics headingDiagnostics;
 
   @override
   Widget build(BuildContext context) => SafeArea(child: Center(
@@ -103,6 +106,18 @@ class ServiceStatusSheet extends StatelessWidget {
           ListTile(title: const Text('위치 정확도 권한'),
             subtitle: Text(locationPrecision.name)),
           const Divider(height: 30),
+          const Text('Heading 진단 · 좌표/키는 표시하지 않습니다.'),
+          ListTile(title: const Text('UI interface orientation'),
+            subtitle: Text(headingDiagnostics.interfaceOrientation?.name ?? '확인 중')),
+          ListTile(title: const Text('Applied CL heading orientation'),
+            subtitle: Text(headingDiagnostics.headingOrientation?.name ?? '확인 중')),
+          ListTile(title: const Text('Filtered heading'),
+            subtitle: Text(_angle(headingDiagnostics.filteredHeading))),
+          ListTile(title: const Text('Kakao camera bearing · 마지막 snapshot'),
+            subtitle: Text(_angle(headingDiagnostics.cameraBearing))),
+          ListTile(title: const Text('Display heading · snapshot 기준'),
+            subtitle: Text(_angle(headingDiagnostics.displayHeading))),
+          const Divider(height: 30),
           const ListTile(title: Text('Android package'),
             subtitle: Text(ServiceConfiguration.appIdentifier)),
           const ListTile(title: Text('Expected Bundle ID'),
@@ -125,6 +140,8 @@ class ServiceStatusSheet extends StatelessWidget {
   };
 
   static String _yesNo(bool? value) => value == null ? '확인 중' : value ? 'yes' : 'no';
+  static String _angle(double? value) => value != null && value.isFinite
+      ? '${value.toStringAsFixed(1)}°' : '확인 중';
 
   Widget _entry(String name, ConfigurationStatus status, {String? issue}) {
     final label = switch (status) {

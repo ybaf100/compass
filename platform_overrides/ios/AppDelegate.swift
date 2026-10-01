@@ -650,6 +650,9 @@ private final class KakaoHeadingFrameTarget: NSObject {
 private final class HeadingBridge: NSObject, FlutterStreamHandler, CLLocationManagerDelegate {
   private let manager = CLLocationManager()
   private var sink: FlutterEventSink?
+  private var orientation = HeadingOrientationState()
+  private var orientationAppliedAt: Date?
+  private var orientationRefreshWork: [DispatchWorkItem] = []
 
   func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink)
     -> FlutterError? {
@@ -662,7 +665,7 @@ private final class HeadingBridge: NSObject, FlutterStreamHandler, CLLocationMan
     manager.headingFilter = 1
     UIDevice.current.beginGeneratingDeviceOrientationNotifications()
     NotificationCenter.default.addObserver(self,
-      selector: #selector(updateOrientation),
+      selector: #selector(orientationChanged),
       name: UIDevice.orientationDidChangeNotification, object: nil)
     NotificationCenter.default.addObserver(self,
       selector: #selector(resume),
@@ -670,12 +673,16 @@ private final class HeadingBridge: NSObject, FlutterStreamHandler, CLLocationMan
     NotificationCenter.default.addObserver(self,
       selector: #selector(pause),
       name: UIApplication.didEnterBackgroundNotification, object: nil)
-    updateOrientation()
+    NotificationCenter.default.addObserver(self,
+      selector: #selector(resume),
+      name: UIScene.didActivateNotification, object: nil)
+    orientationChanged()
     manager.startUpdatingHeading()
     return nil
   }
 
   func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    cancelOrientationRefreshes()
     manager.stopUpdatingHeading()
     NotificationCenter.default.removeObserver(self)
     UIDevice.current.endGeneratingDeviceOrientationNotifications()
@@ -689,24 +696,73 @@ private final class HeadingBridge: NSObject, FlutterStreamHandler, CLLocationMan
   }
 
   @objc private func resume() {
-    if sink != nil { manager.startUpdatingHeading() }
+    guard sink != nil else { return }
+    orientationChanged()
+    manager.startUpdatingHeading()
   }
 
-  @objc private func pause() { manager.stopUpdatingHeading() }
+  @objc private func pause() {
+    cancelOrientationRefreshes()
+    manager.stopUpdatingHeading()
+  }
 
-  @objc private func updateOrientation() {
-    let scene = UIApplication.shared.connectedScenes
-      .compactMap { $0 as? UIWindowScene }
-      .first { $0.activationState == .foregroundActive }
-    switch scene?.interfaceOrientation {
-    case .landscapeLeft: manager.headingOrientation = .landscapeLeft
-    case .landscapeRight: manager.headingOrientation = .landscapeRight
-    case .portraitUpsideDown: manager.headingOrientation = .portraitUpsideDown
-    default: manager.headingOrientation = .portrait
+  private func cancelOrientationRefreshes() {
+    orientationRefreshWork.forEach { $0.cancel() }
+    orientationRefreshWork.removeAll()
+  }
+
+  @objc private func orientationChanged() {
+    cancelOrientationRefreshes()
+    refreshOrientation()
+    // Device notification may precede UIKit's committed scene orientation.
+    // Two bounded follow-ups, plus each sensor callback, cover that transition;
+    // no polling or second heading stream. Rotation lock uses the scene value.
+    for delay in [0.15, 0.5] {
+      let work = DispatchWorkItem { [weak self] in
+        guard let self, self.sink != nil,
+              UIApplication.shared.applicationState != .background else { return }
+        self.refreshOrientation()
+      }
+      orientationRefreshWork.append(work)
+      DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
   }
 
+  @discardableResult private func refreshOrientation() -> Bool {
+    let scenes = UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .filter { $0.activationState == .foregroundActive }
+    let scene = scenes.first { $0.windows.contains { $0.isKeyWindow } } ?? scenes.first
+    let snapshot: HeadingOrientationName
+    switch scene?.interfaceOrientation {
+    case .portrait: snapshot = .portrait
+    case .portraitUpsideDown: snapshot = .portraitUpsideDown
+    case .landscapeLeft: snapshot = .landscapeLeft
+    case .landscapeRight: snapshot = .landscapeRight
+    default: snapshot = .unknown
+    }
+    let changed = orientation.update(snapshot)
+    guard changed else { return false }
+    switch orientation.applied {
+    case .landscapeLeft: manager.headingOrientation = .landscapeLeft
+    case .landscapeRight: manager.headingOrientation = .landscapeRight
+    case .portraitUpsideDown: manager.headingOrientation = .portraitUpsideDown
+    case .portrait: manager.headingOrientation = .portrait
+    case .unknown: break // never applied by the conversion policy
+    }
+    orientationAppliedAt = Date()
+    #if DEBUG
+    print("[heading] interface=\(orientation.interface.rawValue) applied=\(orientation.applied.rawValue)")
+    #endif
+    return true
+  }
+
   func locationManager(_ manager: CLLocationManager, didUpdateHeading heading: CLHeading) {
+    guard sink != nil, UIApplication.shared.applicationState != .background else { return }
+    // Do not publish an in-flight sample measured in the previous reference
+    // frame. Preserve the existing filtered value until the next valid sample.
+    if refreshOrientation() { return }
+    if let appliedAt = orientationAppliedAt, heading.timestamp < appliedAt { return }
     guard heading.headingAccuracy >= 0 else {
       sink?(NSNull())
       return
@@ -715,7 +771,9 @@ private final class HeadingBridge: NSObject, FlutterStreamHandler, CLLocationMan
     sink?([
       "heading": trueNorth ? heading.trueHeading : heading.magneticHeading,
       "trueNorth": trueNorth,
-      "accuracy": heading.headingAccuracy
+      "accuracy": heading.headingAccuracy,
+      "interfaceOrientation": orientation.interface.rawValue,
+      "headingOrientation": orientation.applied.rawValue
     ])
   }
 

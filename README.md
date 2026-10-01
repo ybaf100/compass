@@ -89,6 +89,14 @@ Kakao 100% 기준 마커 지름은 목적지 22, 친구/오래된 친구/Ping 18
 
 cone 이미지의 0°는 위쪽이며 중심 점은 회전 대칭입니다. 숨은 회전 offset은 없습니다. 최단 각도 기반 짧은 90ms 회전과 지도 이동 중 CADisplayLink/Choreographer 갱신을 유지하며 pause/dispose에서 정리합니다. iPad의 CoreLocation headingOrientation은 활성 scene의 interfaceOrientation을 계속 사용합니다. 배율 변경은 기존 POI/annotation 스타일을 갱신할 뿐 지도/카메라/인증 lifecycle을 재생성하지 않습니다. 각 native view는 최대 31 배율 preset만 캐시합니다. 지도 회전/화면 회전/359°↔0°와 50/100/125/200% 배율은 실기기 재검증 대상입니다.
 
+### iPad landscape heading 수정
+
+UIKit의 `UIInterfaceOrientation`과 CoreLocation의 `CLDeviceOrientation`은 landscape 좌우 의미가 반대입니다. 현재 foreground/key-window scene을 읽고 **UI landscapeLeft → CL landscapeRight, UI landscapeRight → CL landscapeLeft**로 변환합니다. portrait/upsideDown은 그대로 유지하며 센서 각도에 임의 offset을 추가하지 않습니다. [Apple UI orientation 정의](https://developer.apple.com/documentation/uikit/uiinterfaceorientation), [CoreLocation headingOrientation](https://developer.apple.com/documentation/corelocation/cllocationmanager/headingorientation).
+
+초기 시작, 화면 회전 알림, foreground/scene 활성화에서 갱신합니다. UIKit 회전 완료 전 알림에 대비해 0.15/0.5초 뒤 두 번만 재확인하고, 각 heading callback에서도 현재 scene을 확인합니다. scene이 일시적으로 없으면 마지막 적용 orientation을 유지합니다. background/cancel에서는 예약 작업을 정리하며 이전 reference frame에서 생성된 in-flight reading은 전달하지 않습니다. 새 GPS/heading stream이나 polling은 없습니다.
+
+지도 메뉴 → **서비스 상태**에서 UI interface orientation / Applied CL heading orientation / Filtered heading / Kakao camera bearing / Display heading을 확인할 수 있습니다. 각도는 마지막 Flutter camera snapshot 기준이며 지도 회전 중 native renderer의 실시간 각도를 대체하지 않습니다. 키·좌표는 표시하지 않고 debug 로그는 orientation enum만 기록합니다. Kakao AbsoluteRotation, `normalize(filteredHeading - cameraBearing)`의 native 단일 보정, marker settings와 Compass는 유지합니다. 단위 테스트의 north/east reading은 fake SDK fixture이며 실기기 방향 정확도 검증은 아닙니다.
+
 ## 구조
 
 | 영역 | 책임 |

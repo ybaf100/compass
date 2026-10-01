@@ -175,9 +175,11 @@ for configuration in ('Debug', 'Release'):
 app_delegate = root / 'ios/Runner/AppDelegate.swift'
 policy = root / 'platform_overrides/ios/KakaoEngineLifecycle.swift'
 marker_geometry = root / 'platform_overrides/ios/KakaoMarkerGeometry.swift'
+heading_orientation = root / 'platform_overrides/ios/HeadingOrientation.swift'
 if app_delegate.exists():
     bridge = (root / 'platform_overrides/ios/AppDelegate.swift').read_text()
-    app_delegate.write_text(bridge + '\n' + policy.read_text() + '\n' + marker_geometry.read_text())
+    app_delegate.write_text(bridge + '\n' + policy.read_text() + '\n' +
+                            marker_geometry.read_text() + '\n' + heading_orientation.read_text())
 
 project = root / 'ios/Runner.xcodeproj/project.pbxproj'
 if project.exists():
