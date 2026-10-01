@@ -11,7 +11,10 @@ void main() {
     ];
     final files = <File>[
       ...Directory('lib').listSync(recursive: true).whereType<File>(),
-      ...Directory('platform_overrides').listSync(recursive: true).whereType<File>(),
+      // Launcher artwork is binary; app_icons.py verifies these PNG assets.
+      // Keep scanning all native source, XML and AppIcon JSON configuration.
+      ...Directory('platform_overrides').listSync(recursive: true).whereType<File>()
+        .where((file) => !file.path.endsWith('.png')),
       File('pubspec.yaml'), File('config/defines.example.json'),
       File('.github/workflows/verify.yml'), File('README.md'), File('SETUP.md'),
     ];
