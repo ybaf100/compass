@@ -79,22 +79,24 @@ void main() {
   }
 
   testWidgets('engine prepared/active/return/auth diagnostics show SDK facts', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(const MaterialApp(home: Scaffold(body:
       ServiceStatusSheet(kakao: ConfigurationStatus.configured,
         supabase: ConfigurationStatus.missing, mapbox: ConfigurationStatus.missing,
         kakaoDiagnostics: KakaoDiagnostics(prepareReturn: false, enginePrepared: true,
           engineActive: false, authCallback: KakaoAuthCallback.succeeded,
           engineStateSummary: KakaoEngineSummary.prepared)))));
-    Future<void> checkRow(String title, String value) async {
-      await tester.scrollUntilVisible(find.text(title), 180);
+    void checkRow(String title, String value) {
+      expect(find.text(title), findsOneWidget);
       final row = find.ancestor(of: find.text(title), matching: find.byType(ListTile));
       expect(find.descendant(of: row, matching: find.text(value)), findsOneWidget);
     }
-    await checkRow('prepareEngine return', 'false');
-    await checkRow('Engine prepared', 'yes');
-    await checkRow('Engine active', 'no');
-    await checkRow('Auth callback status', 'succeeded');
-    await checkRow('Engine state summary', 'prepared');
+    checkRow('prepareEngine return', 'false');
+    checkRow('Engine prepared', 'yes');
+    checkRow('Engine active', 'no');
+    checkRow('Auth callback status', 'succeeded');
+    checkRow('Engine state summary', 'prepared');
   });
 
   test('service initialization classifies failures without connectivity gating', () async {
