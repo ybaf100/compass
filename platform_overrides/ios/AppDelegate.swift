@@ -498,7 +498,8 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
         let options = PoiOptions(styleID: styleID, poiID: id)
         options.clickable = id.hasPrefix("member:")
         if id == "user" {
-          options.transformType = .absoluteRotation
+          // Billboard basis: rotation below is already camera-compensated.
+          options.transformType = .default
           userHasOrientation = false
         }
         options.addText(PoiText(text: caption, styleIndex: 0))
@@ -529,8 +530,8 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
     }
     let bearing = -map.rotationAngle * 180 / .pi
     let display = KakaoMarkerGeometry.display(heading: heading, cameraBearing: bearing)
-    // AbsoluteRotation excludes camera roll. Compensate exactly once here;
-    // Kakao iOS uses counter-clockwise radians, unlike the app's convention.
+    // Default supplies a screen-up billboard basis. Apply the compensated
+    // offset once; Kakao iOS uses counter-clockwise radians.
     let current = -poi.orientation * 180 / .pi
     let target = KakaoMarkerGeometry.target(from: current, to: display)
     if userHasOrientation && abs(target - current) < 0.15 { return }

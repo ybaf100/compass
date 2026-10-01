@@ -35,6 +35,12 @@ class KakaoMarkerContractTests(unittest.TestCase):
             self.assertNotIn("updateUserHeading(animated: false)", body)
             self.assertNotIn("updateUserHeading(false)", body)
 
+    def test_camera_compensation_uses_screen_relative_billboard(self):
+        self.assertIn("options.transformType = .default", SWIFT)
+        self.assertIn(".setTransform(TransformMethod.Default)", KOTLIN)
+        self.assertNotIn("options.transformType = .absoluteRotation", SWIFT)
+        self.assertNotIn("TransformMethod.AbsoluteRotation", KOTLIN)
+
     def test_prepare_return_remains_diagnostic_only(self):
         self.assertIn("lifecycle.prepareReturned(controller.prepareEngine())", SWIFT)
         self.assertNotIn("prepareEngine() == false", SWIFT)

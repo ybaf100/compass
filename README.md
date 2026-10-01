@@ -81,7 +81,7 @@ Compass는 접힘·확장 중간·전체화면 모두 **방향 화살표와 거�
 
 Kakao 마커의 보이는 지름은 목적지 22, 친구/오래된 친구/Ping 18, candidate 16 logical pixels입니다. 내 위치는 16 지름의 중심 점과 방향 cone를 40 크기 canvas에 그립니다. 친구 마커는 투명한 44 크기 canvas로 터치 영역을 확보합니다. Android에서는 이미 density를 반영한 bitmap에 SDK density scaling을 다시 적용하지 않습니다. **Mapbox 마커 스타일과 크기는 변경하지 않습니다.** 실제 터치 범위와 가독성은 기기에서 확인해야 합니다.
 
-내 위치 방향은 기존 filteredHeading을 optional provider capability로 전달합니다. Kakao bridge는 최신 값만 최대 초당 20회 전달하고 동시에 한 요청만 실행하며, 친구/Ping/목적지 overlay는 재전송하지 않습니다. native SDK의 카메라 bearing을 읽어 `normalize(deviceHeading - cameraBearing)`을 적용합니다. iOS의 반시계 radians와 Android의 시계 radians는 공통 시계 degrees로 변환합니다. absolute-rotation user icon에는 최단 각도 기반 짧은 90ms 회전을 적용하고, 지도 이동 중에만 CADisplayLink/Choreographer에서 카메라 방향을 갱신합니다. pause/dispose에서 callback을 정리합니다. 지도 회전 보정과 359°/0° 방향은 실기기 재검증 대상입니다.
+내 위치 방향은 기존 filteredHeading을 optional provider capability로 전달합니다. Kakao bridge는 최신 값만 최대 초당 20회 전달하고 동시에 한 요청만 실행하며, 친구/Ping/목적지 overlay는 재전송하지 않습니다. native SDK의 카메라 bearing을 읽어 `normalize(deviceHeading - cameraBearing)`을 적용합니다. iOS의 반시계 radians와 Android의 시계 radians는 공통 시계 degrees로 변환합니다. `Default`의 화면 위쪽 billboard 기준에 계산한 상대 각도를 적용하여 SDK의 세계 좌표 회전과 중복 보정하지 않습니다. 최단 각도 기반 짧은 90ms 회전을 적용하고, 지도 이동 중에만 CADisplayLink/Choreographer에서 카메라 방향을 갱신합니다. pause/dispose에서 callback을 정리합니다. 지도 회전 보정과 359°/0° 방향은 실기기 재검증 대상입니다.
 
 ## 구조
 

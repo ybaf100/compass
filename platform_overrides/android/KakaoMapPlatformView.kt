@@ -247,7 +247,7 @@ internal class KakaoMapPlatformView(
             if (existing == null) {
                 labels[id] = layer.addLabel(LabelOptions.from(id, position)
                     .setStyles(style).setTexts(LabelTextBuilder().setTexts(caption))
-                    .setTransform(if (id == "user") TransformMethod.AbsoluteRotation else TransformMethod.Default)
+                    .setTransform(TransformMethod.Default)
                     .setClickable(id.startsWith("member:")))
                 if (id == "user") userHasOrientation = false
             } else {
@@ -284,8 +284,8 @@ internal class KakaoMapPlatformView(
         val current = label.rotation * 180 / PI
         val target = KakaoMarkerGeometry.target(current, display)
         if (userHasOrientation && kotlin.math.abs(target - current) < 0.15) return
-        // AbsoluteRotation excludes camera rotation; the SDK receives a
-        // compensated screen angle, not a raw sensor value.
+        // Default supplies a screen-up billboard basis. The SDK receives
+        // the camera-compensated screen offset exactly once.
         label.rotateTo((target * PI / 180).toFloat(), if (animated && userHasOrientation) 90 else 0)
         userHasOrientation = true
     }

@@ -12,7 +12,7 @@ import '../core/diagnostics.dart';
 import 'map_provider.dart';
 import 'map_user_heading.dart';
 
-/// Online map adapter. All native traffic is batched as stable-ID overlays.
+/// Online map adapter: stable-ID overlays and a separate bounded heading path.
 class KakaoMapProvider implements MapProvider, CameraAwareMapProvider, UserHeadingMapProvider {
   KakaoMapProvider({required this.appKey, this.onFailure, KakaoMapBridge? bridge})
       : _bridge = bridge ?? PlatformKakaoMapBridge(),
