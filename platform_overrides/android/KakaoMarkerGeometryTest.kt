@@ -4,6 +4,25 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class KakaoMarkerGeometryTest {
+    @Test fun northUpNorth() { assertEquals(0.0, KakaoMarkerGeometry.display(0.0, 0.0), 0.001) }
+    @Test fun cameraEastDeviceEast() { assertEquals(0.0, KakaoMarkerGeometry.display(90.0, 90.0), 0.001) }
+    @Test fun cameraEastDeviceNorth() { assertEquals(270.0, KakaoMarkerGeometry.display(0.0, 90.0), 0.001) }
+    @Test fun cameraEastDeviceSouth() { assertEquals(90.0, KakaoMarkerGeometry.display(180.0, 90.0), 0.001) }
+    @Test fun finalBoundaryRadians() { assertEquals((Math.PI / 2).toFloat(), KakaoMarkerGeometry.orientationRadians(90.0), 0.001f) }
+    @Test fun scaleClampAndDefaultPreset() {
+        assertEquals(0.5, KakaoMarkerGeometry.scale(0.0), 0.001)
+        assertEquals(2.0, KakaoMarkerGeometry.scale(3.0), 0.001)
+        assertEquals(1.25, KakaoMarkerGeometry.scale(1.25), 0.001)
+    }
+    @Test fun allScalesPreserveTouchArea() {
+        for (scale in listOf(0.5, 1.0, 1.25, 2.0)) {
+            for (kind in listOf("member", "stale")) {
+                org.junit.Assert.assertTrue(KakaoMarkerGeometry.canvas(kind, scale) >= 44)
+                org.junit.Assert.assertTrue(KakaoMarkerGeometry.diameter(kind) * scale < KakaoMarkerGeometry.diameter("destination") * scale)
+            }
+            assertEquals(40 * scale, KakaoMarkerGeometry.canvas("userHeading", scale), 0.001)
+        }
+    }
     @Test fun northUpEast() { assertEquals(90.0, KakaoMarkerGeometry.display(90.0, 0.0), 0.001) }
     @Test fun rotatedCamera() { assertEquals(45.0, KakaoMarkerGeometry.display(90.0, 45.0), 0.001) }
     @Test fun cameraWrap() { assertEquals(1.0, KakaoMarkerGeometry.display(0.0, 359.0), 0.001) }

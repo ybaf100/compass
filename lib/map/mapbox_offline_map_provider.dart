@@ -8,12 +8,29 @@ import '../core/location/location_provider.dart';
 import '../destination/destination_model.dart';
 import '../offline/offline_tile_backend.dart';
 import 'map_provider.dart';
+import '../settings/marker_settings.dart';
 
 /// All Mapbox SDK annotations and map events remain inside this adapter.
-class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
+class MapboxOverlayManagers {
+  const MapboxOverlayManagers(this.circles, this.labels, this.hits);
+  final mb.CircleAnnotationManager circles;
+  final mb.PointAnnotationManager labels;
+  final mb.CircleAnnotationManager hits;
+}
+
+class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider, MarkerScaleMapProvider {
+  MapboxOfflineMapProvider({Future<MapboxOverlayManagers> Function(mb.MapboxMap)? createOverlays})
+      : _createOverlays = createOverlays ?? _createNativeOverlays;
+  final Future<MapboxOverlayManagers> Function(mb.MapboxMap) _createOverlays;
+  static Future<MapboxOverlayManagers> _createNativeOverlays(mb.MapboxMap map) async =>
+      MapboxOverlayManagers(await map.annotations.createCircleAnnotationManager(),
+        await map.annotations.createPointAnnotationManager(),
+        await map.annotations.createCircleAnnotationManager());
   mb.MapboxMap? _map;
   mb.CircleAnnotationManager? _circles;
   mb.PointAnnotationManager? _labels;
+  mb.CircleAnnotationManager? _hits;
+  final Map<String, mb.CircleAnnotation> _hitPins = {};
   mb.Cancelable? _memberTap;
   final Map<String, mb.CircleAnnotation> _pins = {};
   final Map<String, mb.PointAnnotation> _text = {};
@@ -27,6 +44,16 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
   MapCameraState? _savedCamera;
   double _bottomPadding = 0;
   double _pinReveal = 1;
+  double _markerScale = 1;
+  double get markerScale => _markerScale;
+
+  @override
+  Future<void> setMarkerScale(double scale) {
+    final next = MarkerScales.clamp(scale, 1);
+    if (next == _markerScale) return Future<void>.value();
+    _markerScale = next;
+    return _enqueue(_reconcile); // Update annotations, not MapWidget/camera/style.
+  }
   bool _disposed = false;
   int _generation = 0;
   Future<void> _operations = Future<void>.value();
@@ -113,12 +140,15 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
   }
 
   Future<void> _initialize(mb.MapboxMap map, int generation) async {
-    final circles = await map.annotations.createCircleAnnotationManager();
-    final labels = await map.annotations.createPointAnnotationManager();
+    final managers = await _createOverlays(map);
+    final circles = managers.circles;
+    final labels = managers.labels;
+    final hits = managers.hits;
     if (_disposed || generation != _generation) return;
     _circles = circles;
     _labels = labels;
-    _memberTap = circles.tapEvents(onTap: (annotation) {
+    _hits = hits;
+    _memberTap = hits.tapEvents(onTap: (annotation) {
       final id = _memberPinIds[annotation.id];
       if (id != null) _onMemberTapped?.call(id);
     });
@@ -139,7 +169,8 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
   Future<void> _reconcile() async {
     final circles = _circles;
     final labels = _labels;
-    if (circles == null || labels == null) return;
+    final hits = _hits;
+    if (circles == null || labels == null || hits == null) return;
     final entries = <String, (GeoPoint, String, int, double)>{};
     if (_location != null) {
       entries['user'] = (_location!.point, '나', 0xFF2288E5, 1);
@@ -161,6 +192,8 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
     for (final id in _pins.keys.toList()) {
       if (entries.containsKey(id)) continue;
       await circles.delete(_pins.remove(id)!);
+      final hit = _hitPins.remove(id);
+      if (hit != null) await hits.delete(hit);
       if (_text.containsKey(id)) {
         await labels.delete(_text.remove(id)!);
       }
@@ -169,37 +202,57 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
     for (final entry in entries.entries) {
       final id = entry.key;
       final (point, name, color, opacity) = entry.value;
+      final radius = MarkerScales.mapboxRadius(id, _markerScale);
       var marker = _pins[id];
       if (marker == null) {
         marker = await circles.create(mb.CircleAnnotationOptions(
-          geometry: _point(point), circleRadius: id == 'user' ? 9 : 11,
+          geometry: _point(point), circleRadius: radius,
           circleColor: color, circleOpacity: opacity,
-          circleStrokeColor: 0xFFFFFFFF, circleStrokeWidth: 2));
+          circleStrokeColor: 0xFFFFFFFF, circleStrokeWidth: 2 * _markerScale));
         _pins[id] = marker;
         _text[id] = await labels.create(mb.PointAnnotationOptions(
           geometry: _point(point), textField: name, textColor: 0xFF18344A,
-          textHaloColor: 0xFFFFFFFF, textHaloWidth: 2,
-          textSize: 12, textOffset: const [0, 2]));
+          textHaloColor: 0xFFFFFFFF, textHaloWidth: 2 * _markerScale,
+          textSize: 12 * _markerScale, textOffset: const [0, 2]));
       } else {
         if (marker.geometry.coordinates.lng != point.longitude ||
             marker.geometry.coordinates.lat != point.latitude ||
-            marker.circleColor != color || marker.circleOpacity != opacity) {
+            marker.circleColor != color || marker.circleOpacity != opacity ||
+            marker.circleRadius != radius || marker.circleStrokeWidth != 2 * _markerScale) {
           marker.geometry = _point(point);
           marker.circleColor = color;
           marker.circleOpacity = opacity;
+          marker.circleRadius = radius;
+          marker.circleStrokeWidth = 2 * _markerScale;
           await circles.update(marker);
         }
         final text = _text[id];
         if (text != null && (text.geometry.coordinates.lng != point.longitude ||
             text.geometry.coordinates.lat != point.latitude ||
-            text.textField != name)) {
+            text.textField != name || text.textSize != 12 * _markerScale)) {
           text.geometry = _point(point);
           text.textField = name;
+          text.textSize = 12 * _markerScale;
+          text.textHaloWidth = 2 * _markerScale;
           await labels.update(text);
         }
       }
       if (id.startsWith('member_')) {
-        _memberPinIds[marker.id] = id.substring('member_'.length);
+        // Transparent annotation geometry has an independent 44px minimum
+        // tap diameter. It does not enlarge any visible or base-map marker.
+        var hit = _hitPins[id];
+        final hitRadius = MarkerScales.friendHitRadius(radius);
+        if (hit == null) {
+          hit = await hits.create(mb.CircleAnnotationOptions(geometry: _point(point),
+            circleRadius: hitRadius, circleOpacity: 0, circleStrokeOpacity: 0));
+          _hitPins[id] = hit;
+        } else if (hit.geometry.coordinates.lng != point.longitude ||
+            hit.geometry.coordinates.lat != point.latitude || hit.circleRadius != hitRadius) {
+          hit.geometry = _point(point);
+          hit.circleRadius = hitRadius;
+          await hits.update(hit);
+        }
+        _memberPinIds[hit.id] = id.substring('member_'.length);
       }
     }
   }
@@ -282,6 +335,8 @@ class MapboxOfflineMapProvider implements MapProvider, CameraAwareMapProvider {
     _map = null;
     _circles = null;
     _labels = null;
+    _hits = null;
+    _hitPins.clear();
     _pins.clear();
     _text.clear();
     _memberPinIds.clear();

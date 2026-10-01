@@ -22,6 +22,7 @@ import 'room/room_controller.dart';
 import 'room/room_repository.dart';
 import 'room/room_snapshot_store.dart';
 import 'ui/map_screen.dart';
+import 'settings/marker_settings.dart';
 
 class DestinationCompassApp extends StatefulWidget {
   const DestinationCompassApp({
@@ -74,12 +75,23 @@ class _DestinationCompassAppState extends State<DestinationCompassApp> {
   );
   late final NavigationTargetController _navigation =
       NavigationTargetController(_controller, _roomController);
+  final _markerSettings = MarkerSettingsController(PreferencesMarkerSettingsStore());
 
   @override
   void initState() {
     super.initState();
     unawaited(_mapProvider.refreshRuntimeIdentity());
     _mapMode.addListener(_onModeChanged);
+    _markerSettings.addListener(_applyMarkerScales);
+    _applyMarkerScales();
+    unawaited(_markerSettings.restore());
+  }
+
+  void _applyMarkerScales() {
+    unawaited(_mapProvider.setMarkerScale(_markerSettings.value.online)
+        .catchError((Object _) {}));
+    unawaited(_offlineProvider?.setMarkerScale(_markerSettings.value.offline)
+        .catchError((Object _) {}) ?? Future<void>.value());
   }
 
   void _onModeChanged() {
@@ -89,6 +101,8 @@ class _DestinationCompassAppState extends State<DestinationCompassApp> {
 
   @override
   void dispose() {
+    _markerSettings.removeListener(_applyMarkerScales);
+    _markerSettings.dispose();
     _navigation.dispose();
     _mapMode.removeListener(_onModeChanged);
     _mapMode.dispose();
@@ -125,6 +139,7 @@ class _DestinationCompassAppState extends State<DestinationCompassApp> {
       configuration: widget.configuration,
       supabaseInitialization: widget.supabaseInitialization,
       mapboxInitialization: widget.mapboxInitialization,
+      markerSettings: _markerSettings,
     ),
   );
 }

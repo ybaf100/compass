@@ -11,9 +11,10 @@ import 'kakao_diagnostics.dart';
 import '../core/diagnostics.dart';
 import 'map_provider.dart';
 import 'map_user_heading.dart';
+import '../settings/marker_settings.dart';
 
 /// Online map adapter: stable-ID overlays and a separate bounded heading path.
-class KakaoMapProvider implements MapProvider, CameraAwareMapProvider, UserHeadingMapProvider {
+class KakaoMapProvider implements MapProvider, CameraAwareMapProvider, UserHeadingMapProvider, MarkerScaleMapProvider {
   KakaoMapProvider({required this.appKey, this.onFailure, KakaoMapBridge? bridge})
       : _bridge = bridge ?? PlatformKakaoMapBridge(),
         diagnostics = ValueNotifier(KakaoDiagnostics(
@@ -51,6 +52,18 @@ class KakaoMapProvider implements MapProvider, CameraAwareMapProvider, UserHeadi
   bool _headingDirty = false;
   bool _headingSending = false;
   double _pinReveal = 1;
+  double _markerScale = 1.25;
+  double get markerScale => _markerScale;
+
+  @override
+  Future<void> setMarkerScale(double scale) {
+    final next = MarkerScales.clamp(scale, 1.25);
+    if (next == _markerScale) return Future<void>.value();
+    _markerScale = next;
+    return _queue(() async {
+      if (_attached) await _bridge.send('markerScale', {'scale': _markerScale});
+    });
+  }
   double _bottomPadding = 0;
   int _generation = 0;
   Future<void> _operations = Future<void>.value();
@@ -86,6 +99,8 @@ class KakaoMapProvider implements MapProvider, CameraAwareMapProvider, UserHeadi
       switch (event['type']) {
         case 'attached':
           _attached = true;
+          _queue(() => _bridge.send('markerScale', {'scale': _markerScale}))
+              .catchError((Object _) {});
           _headingDirty = true;
           _scheduleHeading();
           _queue(() => _bridge.send('padding', {'bottom': _bottomPadding}))

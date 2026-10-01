@@ -60,6 +60,8 @@ internal class KakaoMapPlatformView(
     private val labels = mutableMapOf<String, Label>()
     private val kinds = mutableMapOf<String, String>()
     private val styles = mutableMapOf<String, LabelStyles>()
+    private var markerScale = 1.25
+    private val installedMarkerScales = mutableSetOf<Int>()
     private var pendingMarkers: List<Map<*, *>> = emptyList()
     private var pendingCamera: Map<*, *>? = null
     private var bottomPadding = 0.0
@@ -157,6 +159,16 @@ internal class KakaoMapPlatformView(
                     updateUserHeading(true)
                     if (cameraMoving) startCameraHeadingWatch()
                 }
+                "markerScale" -> {
+                    val next = KakaoMarkerGeometry.scale(call.argument<Number>("scale")?.toDouble() ?: 1.25)
+                    if (markerScale != next) {
+                        markerScale = next
+                        map?.let { installStyles(it) }
+                        for ((id, label) in labels) {
+                            kinds[id]?.let { kind -> markerStyle(kind)?.let { label.setStyles(it); label.invalidate() } }
+                        }
+                    }
+                }
                 "camera" -> {
                     pendingCamera = call.arguments as? Map<*, *>
                     pendingCamera?.let { applyCamera(it) }
@@ -174,6 +186,8 @@ internal class KakaoMapPlatformView(
     }
 
     private fun installStyles(kakaoMap: KakaoMap) {
+        val scaleKey = (markerScale * 100).toInt()
+        if (scaleKey in installedMarkerScales) return
         val palette = mapOf("user" to 0xFF328DFF.toInt(), "userHeading" to 0xFF328DFF.toInt(),
             "candidate" to 0xFF3970DF.toInt(), "destination" to 0xFFED6541.toInt(),
             "member" to 0xFF2EBF9F.toInt(), "stale" to 0xFF8796A0.toInt(),
@@ -185,15 +199,18 @@ internal class KakaoMapPlatformView(
             // default dpScale again would make icons much too large.
             val style = LabelStyles.from(LabelStyle.from(icon(color, kind))
                 .setApplyDpScale(false).setAnchorPoint(0.5f, 0.5f)
-                .setTextStyles((12 * density).toInt(), Color.WHITE,
-                    (2 * density).toInt(), Color.BLACK))
-            manager.addLabelStyles(style)?.let { styles[kind] = it }
+                .setTextStyles((12 * density * markerScale).toInt(), Color.WHITE,
+                    (2 * density * markerScale).toInt().coerceAtLeast(1), Color.BLACK))
+            manager.addLabelStyles(style)?.let { styles["$kind-$scaleKey"] = it }
         }
+        installedMarkerScales.add(scaleKey) // At most 31 scale presets per native view.
     }
+
+    private fun markerStyle(kind: String) = styles["$kind-${(markerScale * 100).toInt()}"]
 
     private fun icon(color: Int, kind: String): Bitmap {
         val density = context.resources.displayMetrics.density
-        val side = KakaoMarkerGeometry.canvas(kind).toFloat()
+        val side = KakaoMarkerGeometry.canvas(kind, markerScale).toFloat()
         val size = kotlin.math.ceil(side * density).toInt().coerceAtLeast(1)
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         bitmap.density = Bitmap.DENSITY_NONE
@@ -201,25 +218,27 @@ internal class KakaoMapPlatformView(
         canvas.scale(density, density)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         val center = side / 2
+        canvas.translate(center, center)
+        canvas.scale(markerScale.toFloat(), markerScale.toFloat())
         if (kind == "userHeading") {
             val cone = Path().apply {
-                moveTo(center, center); lineTo(center - 12, 4f)
-                quadTo(center, -2f, center + 12, 4f); close()
+                moveTo(0f, 0f); lineTo(-12f, -16f)
+                quadTo(0f, -22f, 12f, -16f); close()
             }
             paint.color = color; paint.alpha = 56
             canvas.drawPath(cone, paint)
             paint.alpha = 255
             val arrow = Path().apply {
-                moveTo(center, 3f); lineTo(center + 5, 11f)
-                lineTo(center, 9f); lineTo(center - 5, 11f); close()
+                moveTo(0f, -17f); lineTo(5f, -9f)
+                lineTo(0f, -11f); lineTo(-5f, -9f); close()
             }
             canvas.drawPath(arrow, paint)
         }
         val diameter = KakaoMarkerGeometry.diameter(kind).toFloat()
         paint.color = Color.WHITE
-        canvas.drawCircle(center, center, diameter / 2, paint)
+        canvas.drawCircle(0f, 0f, diameter / 2, paint)
         paint.color = color
-        canvas.drawCircle(center, center, diameter / 2 - 2, paint)
+        canvas.drawCircle(0f, 0f, diameter / 2 - 2, paint)
         return bitmap
     }
 
@@ -241,13 +260,13 @@ internal class KakaoMapPlatformView(
                 userHeading = (marker["heading"] as? Number)?.toDouble()?.takeIf { it.isFinite() }
             }
             val displayKind = if (id == "user" && userHeading != null) "userHeading" else kind
-            val style = styles[displayKind] ?: continue
+            val style = markerStyle(displayKind) ?: continue
             val caption = if (id == "user") "" else marker["label"] as? String ?: ""
             val existing = labels[id]
             if (existing == null) {
                 labels[id] = layer.addLabel(LabelOptions.from(id, position)
                     .setStyles(style).setTexts(LabelTextBuilder().setTexts(caption))
-                    .setTransform(TransformMethod.Default)
+                    .setTransform(if (id == "user") TransformMethod.AbsoluteRotation else TransformMethod.Default)
                     .setClickable(id.startsWith("member:")))
                 if (id == "user") userHasOrientation = false
             } else {
@@ -270,7 +289,7 @@ internal class KakaoMapPlatformView(
         val label = labels["user"] ?: return
         val kind = if (userHeading == null) "user" else "userHeading"
         if (kinds["user"] != kind) {
-            styles[kind]?.let { label.setStyles(it); label.invalidate() }
+            markerStyle(kind)?.let { label.setStyles(it); label.invalidate() }
             kinds["user"] = kind
         }
         val heading = userHeading
@@ -284,9 +303,9 @@ internal class KakaoMapPlatformView(
         val current = label.rotation * 180 / PI
         val target = KakaoMarkerGeometry.target(current, display)
         if (userHasOrientation && kotlin.math.abs(target - current) < 0.15) return
-        // Default supplies a screen-up billboard basis. The SDK receives
-        // the camera-compensated screen offset exactly once.
-        label.rotateTo((target * PI / 180).toFloat(), if (animated && userHasOrientation) 90 else 0)
+        // AbsoluteRotation receives one live-camera compensation. Android's
+        // clockwise radians are converted only at this final SDK boundary.
+        label.rotateTo(KakaoMarkerGeometry.orientationRadians(target), if (animated && userHasOrientation) 90 else 0)
         userHasOrientation = true
     }
 
@@ -357,11 +376,13 @@ internal object KakaoMarkerGeometry {
         "user", "userHeading" -> 16.0
         else -> 16.0
     }
-    fun canvas(kind: String): Double = when (kind) {
-        "user", "userHeading" -> 40.0
-        "member", "stale" -> 44.0
-        else -> diameter(kind) + 4
+    fun scale(value: Double): Double = if (value.isFinite()) kotlin.math.round(value.coerceIn(0.5, 2.0) * 20) / 20 else 1.25
+    fun canvas(kind: String, scale: Double = 1.0): Double = when (kind) {
+        "user", "userHeading" -> 40.0 * this.scale(scale)
+        "member", "stale" -> maxOf(44.0, (diameter(kind) + 4) * this.scale(scale))
+        else -> (diameter(kind) + 4) * this.scale(scale)
     }
+    fun orientationRadians(clockwiseDegrees: Double) = (clockwiseDegrees * PI / 180).toFloat()
     fun normalize(value: Double) = ((value % 360) + 360) % 360
     fun display(heading: Double, bearing: Double) = normalize(heading - bearing)
     fun target(current: Double, desired: Double) = current + normalize(desired - current + 180) - 180

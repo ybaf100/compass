@@ -47,6 +47,11 @@ abstract interface class UserHeadingMapProvider {
   Future<void> setUserHeading(double? heading);
 }
 
+/// Optional styling capability; changing scale must not recreate a map view.
+abstract interface class MarkerScaleMapProvider {
+  Future<void> setMarkerScale(double scale);
+}
+
 /// UI and destination math depend on this contract, never on a map SDK type.
 abstract class MapProvider {
   Widget buildMap({

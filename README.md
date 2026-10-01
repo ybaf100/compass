@@ -81,9 +81,13 @@ flutter build ios --simulator --debug --dart-define=KAKAO_NATIVE_APP_KEY=발급�
 
 Compass는 접힘·확장 중간·전체화면 모두 **방향 화살표와 거리만** 표시합니다. 목적지 이름, 모드, notice, 북 기준 설명, 상세 정보와 해제 버튼은 Compass에서 표시하지 않습니다. 목적지 없음과 방향 센서 사용 불가만 간단히 안내합니다. 친구의 오래된 위치 정보는 친구방·친구 상세 UI에서 확인합니다.
 
-Kakao 마커의 보이는 지름은 목적지 22, 친구/오래된 친구/Ping 18, candidate 16 logical pixels입니다. 내 위치는 16 지름의 중심 점과 방향 cone를 40 크기 canvas에 그립니다. 친구 마커는 투명한 44 크기 canvas로 터치 영역을 확보합니다. Android에서는 이미 density를 반영한 bitmap에 SDK density scaling을 다시 적용하지 않습니다. **Mapbox 마커 스타일과 크기는 변경하지 않습니다.** 실제 터치 범위와 가독성은 기기에서 확인해야 합니다.
+지도 화면 메뉴 → **지도 마커 크기**에서 온라인 Kakao와 오프라인 Mapbox를 독립 조절합니다. 기본값은 **Kakao 125%, Mapbox 100%**, 범위는 50~200%, 간격은 5%입니다. 변경 즉시 미리보기하며 로컬 SharedPreferences에 저장합니다. 기본값 복원도 제공합니다. Kakao 기본 POI와 Mapbox 기본 labels/icons에는 영향을 주지 않습니다.
 
-내 위치 방향은 기존 filteredHeading을 optional provider capability로 전달합니다. Kakao bridge는 최신 값만 최대 초당 20회 전달하고 동시에 한 요청만 실행하며, 친구/Ping/목적지 overlay는 재전송하지 않습니다. native SDK의 카메라 bearing을 읽어 `normalize(deviceHeading - cameraBearing)`을 적용합니다. iOS의 반시계 radians와 Android의 시계 radians는 공통 시계 degrees로 변환합니다. `Default`의 화면 위쪽 billboard 기준에 계산한 상대 각도를 적용하여 SDK의 세계 좌표 회전과 중복 보정하지 않습니다. 최단 각도 기반 짧은 90ms 회전을 적용하고, 지도 이동 중에만 CADisplayLink/Choreographer에서 카메라 방향을 갱신합니다. pause/dispose에서 callback을 정리합니다. 지도 회전 보정과 359°/0° 방향은 실기기 재검증 대상입니다.
+Kakao 100% 기준 마커 지름은 목적지 22, 친구/오래된 친구/Ping 18, candidate 16 logical pixels입니다. 내 위치는 16 지름의 중심 점과 위쪽 방향 cone를 40 크기 canvas에 그립니다. 각 모양의 기존 비율에 전체 배율을 곱합니다. 친구 마커의 투명 canvas는 어떤 배율에서도 최소 44 logical pixels를 유지합니다. Mapbox 100%는 기존 user radius 9 / 기타 radius 11 스타일이며 별도 투명 친구 hit annotation에 최소 22 radius를 적용합니다. Android density 중복 scaling은 방지합니다. 실제 터치 범위와 가독성은 기기에서 확인해야 합니다.
+
+내 위치 방향은 기존 filteredHeading을 optional provider capability로 전달합니다. Kakao bridge는 최신 값만 최대 초당 20회 전달하고 동시에 한 요청만 실행하며, 친구/Ping/목적지 overlay는 재전송하지 않습니다. 사용자 마커만 **AbsoluteRotation**을 사용하고 일반 마커는 기존 transform을 유지합니다. native SDK의 실시간 카메라 bearing을 읽어 `normalize(deviceHeading - cameraBearing)`을 정확히 한 번 적용합니다. 공통 각도는 0=위/90=오른쪽의 시계 degrees이며 iOS의 반시계 radians(음수) / Android의 시계 radians(양수)는 최종 SDK 호출에서만 변환합니다. 이전 `Default`를 공통 billboard로 취급한 가정은 iOS의 camera-roll 적용 계약과 맞지 않으므로 제거했습니다. [iOS 공식 transform 문서](https://apis.map.kakao.com/ios_v2/references/Enums/PoiTransformType.html), [Android 공식 transform 문서](https://apis.map.kakao.com/android_v2/reference/com/kakao/vectormap/label/TransformMethod.html).
+
+cone 이미지의 0°는 위쪽이며 중심 점은 회전 대칭입니다. 숨은 회전 offset은 없습니다. 최단 각도 기반 짧은 90ms 회전과 지도 이동 중 CADisplayLink/Choreographer 갱신을 유지하며 pause/dispose에서 정리합니다. iPad의 CoreLocation headingOrientation은 활성 scene의 interfaceOrientation을 계속 사용합니다. 배율 변경은 기존 POI/annotation 스타일을 갱신할 뿐 지도/카메라/인증 lifecycle을 재생성하지 않습니다. 각 native view는 최대 31 배율 preset만 캐시합니다. 지도 회전/화면 회전/359°↔0°와 50/100/125/200% 배율은 실기기 재검증 대상입니다.
 
 ## 구조
 

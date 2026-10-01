@@ -35,11 +35,34 @@ class KakaoMarkerContractTests(unittest.TestCase):
             self.assertNotIn("updateUserHeading(animated: false)", body)
             self.assertNotIn("updateUserHeading(false)", body)
 
-    def test_camera_compensation_uses_screen_relative_billboard(self):
-        self.assertIn("options.transformType = .default", SWIFT)
-        self.assertIn(".setTransform(TransformMethod.Default)", KOTLIN)
-        self.assertNotIn("options.transformType = .absoluteRotation", SWIFT)
-        self.assertNotIn("TransformMethod.AbsoluteRotation", KOTLIN)
+    def test_user_absolute_rotation_and_single_camera_compensation(self):
+        self.assertIn("options.transformType = .absoluteRotation", SWIFT)
+        self.assertIn('if (id == "user") TransformMethod.AbsoluteRotation else TransformMethod.Default', KOTLIN)
+        self.assertIn('if id == "user" {', SWIFT)
+        for source in (SWIFT, KOTLIN):
+            self.assertEqual(source.count("KakaoMarkerGeometry.display("), 1)
+            self.assertNotIn("Default supplies a screen-up", source)
+
+    def test_scale_changes_styles_not_native_map_or_overlays(self):
+        swift = SWIFT.split('case "markerScale":', 1)[1].split('case "camera":', 1)[0]
+        kotlin = KOTLIN.split('"markerScale" -> {', 1)[1].split('"camera" -> {', 1)[0]
+        self.assertIn("poi.changeStyle", swift)
+        self.assertIn("label.setStyles", kotlin)
+        for body in (swift, kotlin):
+            for forbidden in ("prepareEngine", "activateEngine", "applyMarkers(", "removePoi", "removeLabel"):
+                self.assertNotIn(forbidden, body)
+
+    def test_artwork_zero_points_up_and_dot_is_symmetric(self):
+        self.assertIn('arrow.move(to: CGPoint(x: 0, y: -17))', SWIFT)
+        self.assertIn('moveTo(0f, -17f)', KOTLIN)
+        self.assertIn('canvas.drawCircle(0f, 0f', KOTLIN)
+        self.assertIn('CGRect(x: -diameter/2, y: -diameter/2', SWIFT)
+
+    def test_ipad_interface_orientation_is_not_replaced_by_device_orientation(self):
+        self.assertIn('switch scene?.interfaceOrientation', SWIFT)
+        for orientation in ('landscapeLeft', 'landscapeRight', 'portraitUpsideDown'):
+            self.assertIn(f'case .{orientation}: manager.headingOrientation = .{orientation}', SWIFT)
+        self.assertIn('default: manager.headingOrientation = .portrait', SWIFT)
 
     def test_prepare_return_remains_diagnostic_only(self):
         self.assertIn("lifecycle.prepareReturned(controller.prepareEngine())", SWIFT)

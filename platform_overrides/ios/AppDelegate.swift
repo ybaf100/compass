@@ -82,6 +82,8 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
   private var layer: LabelLayer?
   private var pois: [String: Poi] = [:]
   private var kinds: [String: String] = [:]
+  private var markerScale = 1.25
+  private var installedMarkerScales = Set<Int>()
   private var userHeading: Double?
   private var userHasOrientation = false
   private var cameraHeadingLink: CADisplayLink?
@@ -321,6 +323,18 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
       updateUserHeading(animated: true)
       if cameraMoving { startCameraHeadingWatch() }
       result(nil)
+    case "markerScale":
+      let value = (call.arguments as? [String: Any])?["scale"] as? Double ?? 1.25
+      let next = KakaoMarkerGeometry.scale(value)
+      if markerScale != next {
+        markerScale = next
+        installMarkerStyles()
+        // Retain stable POIs, positions, texts, orientation and map lifecycle.
+        for (id, poi) in pois {
+          if let kind = kinds[id] { poi.changeStyle(styleID: markerStyleID(kind)) }
+        }
+      }
+      result(nil)
     case "camera":
       pendingCamera = call.arguments as? [String: Any]
       if let pendingCamera { applyCamera(pendingCamera) }
@@ -394,6 +408,24 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
     layer = manager.addLabelLayer(option: LabelLayerOptions(layerID: "compassOverlays",
       competitionType: .none, competitionUnit: .poi, orderType: .rank, zOrder: 10))
     layer?.setClickable(true)
+    installMarkerStyles()
+    applyMarkers()
+    if let pendingCamera { applyCamera(pendingCamera) }
+    emitCamera()
+    lifecycle.addViewSucceeded(currentBounds: container.bounds)
+    observeEngineState()
+    announceLoadedIfAllowed()
+  }
+
+  private func markerStyleID(_ kind: String) -> String {
+    "compass-\(kind)-\(Int((markerScale * 100).rounded()))"
+  }
+
+  private func installMarkerStyles() {
+    guard let map else { return }
+    let scaleKey = Int((markerScale * 100).rounded())
+    guard !installedMarkerScales.contains(scaleKey) else { return }
+    let manager = map.getLabelManager()
     let palette: [String: UIColor] = [
       "user": .systemBlue, "userHeading": .systemBlue,
       "candidate": .systemIndigo, "destination": .systemOrange,
@@ -401,19 +433,14 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
     for (kind, color) in palette {
       let icon = PoiIconStyle(symbol: iconImage(color, kind: kind),
         anchorPoint: CGPoint(x: 0.5, y: 0.5))
-      let text = TextStyle(fontSize: 12, fontColor: .white,
-        strokeThickness: 2, strokeColor: .black)
+      let text = TextStyle(fontSize: UInt(12 * markerScale), fontColor: .white,
+        strokeThickness: UInt(max(1, 2 * markerScale)), strokeColor: .black)
       let line = PoiTextLineStyle(textStyle: text)
       let style = PerLevelPoiStyle(iconStyle: icon,
         textStyle: PoiTextStyle(textLineStyles: [line]), level: 0)
-      manager.addPoiStyle(PoiStyle(styleID: "compass-\(kind)", styles: [style]))
+      manager.addPoiStyle(PoiStyle(styleID: markerStyleID(kind), styles: [style]))
     }
-    applyMarkers()
-    if let pendingCamera { applyCamera(pendingCamera) }
-    emitCamera()
-    lifecycle.addViewSucceeded(currentBounds: container.bounds)
-    observeEngineState()
-    announceLoadedIfAllowed()
+    installedMarkerScales.insert(scaleKey) // At most 31 presets, not per sensor event.
   }
 
   func addViewFailed(_ viewName: String, viewInfoName: String) {
@@ -429,7 +456,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
   }
 
   private func iconImage(_ color: UIColor, kind: String) -> UIImage {
-    let side = CGFloat(KakaoMarkerGeometry.canvas(kind))
+    let side = CGFloat(KakaoMarkerGeometry.canvas(kind, scale: markerScale))
     let diameter = CGFloat(KakaoMarkerGeometry.diameter(kind))
     let center = side / 2
     // SDK scales logical icon assets for its display. Avoid a second Retina
@@ -437,30 +464,33 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
     let format = UIGraphicsImageRendererFormat()
     format.scale = 1
     let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format)
-    return renderer.image { _ in
+    return renderer.image { rendererContext in
+      let context = rendererContext.cgContext
+      context.translateBy(x: center, y: center)
+      context.scaleBy(x: CGFloat(markerScale), y: CGFloat(markerScale))
       if kind == "userHeading" {
         let cone = UIBezierPath()
-        cone.move(to: CGPoint(x: center, y: center))
-        cone.addLine(to: CGPoint(x: center - 12, y: 4))
-        cone.addQuadCurve(to: CGPoint(x: center + 12, y: 4),
-          controlPoint: CGPoint(x: center, y: -2))
+        cone.move(to: .zero)
+        cone.addLine(to: CGPoint(x: -12, y: -16))
+        cone.addQuadCurve(to: CGPoint(x: 12, y: -16),
+          controlPoint: CGPoint(x: 0, y: -22))
         cone.close()
         color.withAlphaComponent(0.22).setFill()
         cone.fill()
         let arrow = UIBezierPath()
-        arrow.move(to: CGPoint(x: center, y: 3))
-        arrow.addLine(to: CGPoint(x: center + 5, y: 11))
-        arrow.addLine(to: CGPoint(x: center, y: 9))
-        arrow.addLine(to: CGPoint(x: center - 5, y: 11))
+        arrow.move(to: CGPoint(x: 0, y: -17))
+        arrow.addLine(to: CGPoint(x: 5, y: -9))
+        arrow.addLine(to: CGPoint(x: 0, y: -11))
+        arrow.addLine(to: CGPoint(x: -5, y: -9))
         arrow.close()
         color.setFill()
         arrow.fill()
       }
       UIColor.white.setFill()
-      UIBezierPath(ovalIn: CGRect(x: center - diameter/2, y: center - diameter/2,
+      UIBezierPath(ovalIn: CGRect(x: -diameter/2, y: -diameter/2,
         width: diameter, height: diameter)).fill()
       color.setFill()
-      UIBezierPath(ovalIn: CGRect(x: center - diameter/2 + 2, y: center - diameter/2 + 2,
+      UIBezierPath(ovalIn: CGRect(x: -diameter/2 + 2, y: -diameter/2 + 2,
         width: diameter - 4, height: diameter - 4)).fill()
     }
   }
@@ -485,7 +515,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
         userHeading = value?.isFinite == true ? value : nil
       }
       let displayKind = id == "user" && userHeading != nil ? "userHeading" : kind
-      let styleID = "compass-\(displayKind)"
+      let styleID = markerStyleID(displayKind)
       let caption = id == "user" ? "" : marker["label"] as? String ?? ""
       if let poi = pois[id] {
         // Dart's MemberMarkerMotion supplies intermediate positions.
@@ -498,8 +528,8 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
         let options = PoiOptions(styleID: styleID, poiID: id)
         options.clickable = id.hasPrefix("member:")
         if id == "user" {
-          // Billboard basis: rotation below is already camera-compensated.
-          options.transformType = .default
+          // Own screen-relative rotation; do not let Default add camera roll.
+          options.transformType = .absoluteRotation
           userHasOrientation = false
         }
         options.addText(PoiText(text: caption, styleIndex: 0))
@@ -519,7 +549,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
     guard let map, let poi = pois["user"] else { return }
     let kind = userHeading == nil ? "user" : "userHeading"
     if kinds["user"] != kind {
-      poi.changeTextAndStyle(texts: [], styleID: "compass-\(kind)")
+      poi.changeTextAndStyle(texts: [], styleID: markerStyleID(kind))
       kinds["user"] = kind
     }
     guard let heading = userHeading else {
@@ -530,12 +560,12 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
     }
     let bearing = -map.rotationAngle * 180 / .pi
     let display = KakaoMarkerGeometry.display(heading: heading, cameraBearing: bearing)
-    // Default supplies a screen-up billboard basis. Apply the compensated
-    // offset once; Kakao iOS uses counter-clockwise radians.
+    // AbsoluteRotation: compensate once using the live native camera.
+    // Kakao iOS uses counter-clockwise radians only at the final boundary.
     let current = -poi.orientation * 180 / .pi
     let target = KakaoMarkerGeometry.target(from: current, to: display)
     if userHasOrientation && abs(target - current) < 0.15 { return }
-    poi.rotateAt(-target * .pi / 180, duration: animated && userHasOrientation ? 90 : 0)
+    poi.rotateAt(KakaoMarkerGeometry.orientationRadians(target), duration: animated && userHasOrientation ? 90 : 0)
     userHasOrientation = true
   }
 

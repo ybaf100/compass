@@ -14,10 +14,20 @@ enum KakaoMarkerGeometry {
     default: return 16
     }
   }
-  static func canvas(_ kind: String) -> Double {
-    if kind == "user" || kind == "userHeading" { return userCanvas }
-    if kind == "member" || kind == "stale" { return memberTouchCanvas }
-    return diameter(kind) + 4
+  static func scale(_ value: Double) -> Double {
+    guard value.isFinite else { return 1.25 }
+    return (min(2, max(0.5, value)) * 20).rounded() / 20
+  }
+  static func canvas(_ kind: String, scale: Double = 1) -> Double {
+    let factor = self.scale(scale)
+    if kind == "user" || kind == "userHeading" { return userCanvas * factor }
+    let visual = (diameter(kind) + 4) * factor
+    if kind == "member" || kind == "stale" { return max(memberTouchCanvas, visual) }
+    return visual
+  }
+  // The image points up at zero. Only this final boundary changes angle sign.
+  static func orientationRadians(_ clockwiseDegrees: Double) -> Double {
+    -clockwiseDegrees * .pi / 180
   }
   static func normalize(_ degrees: Double) -> Double {
     let result = degrees.truncatingRemainder(dividingBy: 360)

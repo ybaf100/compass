@@ -21,6 +21,8 @@ import 'compass_panel.dart';
 import 'offline_maps_sheet.dart';
 import 'room_sheet.dart';
 import 'service_status_sheet.dart';
+import '../settings/marker_settings.dart';
+import 'marker_settings_sheet.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({
@@ -38,6 +40,7 @@ class MapScreen extends StatefulWidget {
     this.supabaseInitialization = const ServiceInitialization.initialized(),
     this.mapboxInitialization = const ServiceInitialization.initialized(),
     this.kakaoDiagnostics,
+    this.markerSettings,
   });
 
   final DestinationController controller;
@@ -53,6 +56,7 @@ class MapScreen extends StatefulWidget {
   final ServiceInitialization supabaseInitialization;
   final ServiceInitialization mapboxInitialization;
   final ValueListenable<KakaoDiagnostics>? kakaoDiagnostics;
+  final MarkerSettingsController? markerSettings;
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -618,9 +622,13 @@ class _MapScreenState extends State<MapScreen>
                 PopupMenuButton<String>(
                   tooltip: '설정 및 오프라인 지도',
                   icon: const Icon(Icons.more_vert, color: Colors.white),
-                  onSelected: (value) => value == 'offline'
-                      ? _showOfflineMaps() : _showServiceStatus(),
+                  onSelected: (value) {
+                    if (value == 'markers') { _showMarkerSettings(); }
+                    else if (value == 'offline') { _showOfflineMaps(); }
+                    else { _showServiceStatus(); }
+                  },
                   itemBuilder: (context) => const [
+                    PopupMenuItem(value: 'markers', child: Text('지도 마커 크기')),
                     PopupMenuItem(value: 'offline',
                       child: Text('오프라인 지도')),
                     PopupMenuItem(value: 'status',
@@ -803,6 +811,14 @@ class _MapScreenState extends State<MapScreen>
         heightFactor: 0.76, child: OfflineMapsSheet(controller: offline,
           currentPosition: widget.controller.location?.point,
           online: widget.controller.networkState != NetworkState.unavailable)));
+  }
+
+  void _showMarkerSettings() {
+    final settings = widget.markerSettings;
+    if (settings == null) return;
+    showModalBottomSheet<void>(context: context, isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => MarkerSettingsSheet(controller: settings));
   }
 
   void _showServiceStatus() {

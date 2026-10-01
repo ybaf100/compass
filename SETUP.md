@@ -148,6 +148,8 @@ python3 tool/verify_app_identity.py --ipa build/ios/ipa/passcom-ios-sideload-uns
 - iPhone/iPad 세로·가로 및 Android 전화·태블릿에서 화면 크기, 목적지 선택, 나침반 전체화면 스와이프를 확인합니다.
 - 위치 권한 거부→허용, GPS 거리, heading 진북과 359°↔0° 회전, 앱 background→foreground 복귀를 확인합니다.
 - Kakao 로딩·인증, 친구 marker, 방 참가, Ping, 공유 목적지, 친구 따라가기와 오래된 위치 표시를 두 기기에서 확인합니다.
+- 지도 메뉴 → 지도 마커 크기: Kakao 기본 125%, Mapbox 기본 100%를 각각 50/100/125/200%로 조절하고 즉시 적용·앱 재시작 복원·기본값 복원을 확인합니다. 지도 기본 POI는 변경되지 않아야 하며 50%에서도 친구 터치 영역이 유지되어야 합니다.
+- Kakao 내 위치 cone: 기기 북/동/남/서 방향 × 지도 bearing 0/90/180/270°, 지도 회전 중, iPad portrait/landscapeLeft/landscapeRight/upsideDown, 359°↔0°를 확인합니다. 북향 지도+동향 기기는 오른쪽, 지도 bearing90°+동향 기기는 위, 지도 bearing90°+북향 기기는 왼쪽입니다. 시뮬레이터/단위 테스트는 실제 기기 방향 정확도를 보장하지 않습니다.
 - Mapbox 지역 다운로드·삭제·재시도, 비행기 모드에서 오프라인 지도와 Compass 유지, 온라인 복구 시 카메라 상태를 확인합니다.
 
 ## 10. 문제 해결

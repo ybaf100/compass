@@ -41,6 +41,47 @@ void main() {
   const own = GeoPoint(37.5, 127.0);
   const friend = GeoPoint(37.51, 127.01);
 
+  testWidgets('marker scale updates in place with no unrelated overlays or camera recreation', (tester) async {
+    final bridge = FakeKakaoBridge();
+    final provider = KakaoMapProvider(appKey: 'test', bridge: bridge);
+    expect(provider.markerScale, 1.25);
+    await provider.setMarkerScale(1.5);
+    provider.buildMap(bottomPadding: 0, onPicked: (_) {},
+      onNamedPlacePicked: (_, _) {}, onLoaded: () {}, onGesture: () {});
+    bridge.emit({'type': 'attached'});
+    bridge.emit({'type': 'loaded'});
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(bridge.calls.lastWhere((c) => c.$1 == 'markerScale').$2, {'scale': 1.5});
+    final count = bridge.calls.length;
+    final listener = bridge.listener;
+    await provider.setMarkerScale(.5);
+    expect(bridge.calls.skip(count).map((c) => c.$1), ['markerScale']);
+    expect(bridge.listener, same(listener));
+    expect(provider.markerScale, .5);
+    provider.reset();
+    expect(provider.markerScale, .5);
+    provider.dispose();
+  });
+
+  for (final (heading, bearing, expected) in [(0.0, 0.0, 0.0), (90.0, 0.0, 90.0),
+      (90.0, 90.0, 0.0), (0.0, 90.0, 270.0)]) {
+    testWidgets('heading $heading camera $bearing computes $expected exactly once', (tester) async {
+      final bridge = FakeKakaoBridge();
+      final provider = KakaoMapProvider(appKey: 'test', bridge: bridge);
+      provider.buildMap(bottomPadding: 0, onPicked: (_) {},
+        onNamedPlacePicked: (_, _) {}, onLoaded: () {}, onGesture: () {});
+      bridge.emit({'type': 'attached'});
+      bridge.emit({'type': 'camera', 'latitude': own.latitude, 'longitude': own.longitude,
+        'zoom': 14, 'bearing': bearing});
+      await provider.setUserHeading(heading);
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(provider.displayedUserHeading, expected);
+      // Native receives north-based input, NOT already compensated display.
+      expect(bridge.calls.lastWhere((c) => c.$1 == 'userHeading').$2['heading'], heading);
+      provider.dispose();
+    });
+  }
+
   testWidgets('user heading is filtered input, coalesced, and changes no unrelated overlays', (tester) async {
     final bridge = FakeKakaoBridge();
     final provider = KakaoMapProvider(appKey: 'test', bridge: bridge);
