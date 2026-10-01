@@ -186,9 +186,9 @@ class _Heading implements HeadingProvider {
 }
 class _Network implements NetworkMonitor {
   @override
-  Future<bool> get hasConnection async => true;
+  Future<NetworkStatus> get current async => const NetworkStatus(NetworkState.available);
   @override
-  Stream<bool> get changes => const Stream.empty();
+  Stream<NetworkStatus> get changes => const Stream.empty();
 }
 class _DestinationStore implements DestinationStore {
   @override
@@ -207,11 +207,11 @@ void main() {
     LocationFix? aFix, bFix;
     final a = RoomController(repository: _Repository(backend, 'a'),
       profileStore: _Store(), locationChanges: aSignals,
-      currentLocation: () => aFix, hasNetwork: () => true,
+      currentLocation: () => aFix, networkState: () => NetworkState.available,
       now: () => clock.now);
     final b = RoomController(repository: _Repository(backend, 'b'),
       profileStore: _Store(), locationChanges: bSignals,
-      currentLocation: () => bFix, hasNetwork: () => true,
+      currentLocation: () => bFix, networkState: () => NetworkState.available,
       now: () => clock.now);
     final personal = DestinationController(locationProvider: _Location(),
       headingProvider: _Heading(), networkMonitor: _Network(),
@@ -278,7 +278,7 @@ void main() {
       accuracyMeters: 200, altitudeMeters: 0);
     final a = RoomController(repository: _Repository(backend, 'a'),
       profileStore: _Store(), locationChanges: signals,
-      currentLocation: () => fix, hasNetwork: () => true, now: () => clock.now);
+      currentLocation: () => fix, networkState: () => NetworkState.available, now: () => clock.now);
     await a.start(); await a.setNickname('환희');
     expect(() => a.joinRoom('BAD'), throwsStateError);
     await a.createRoom();
@@ -303,7 +303,7 @@ void main() {
       accuracyMeters: 10, altitudeMeters: 0);
     final a = RoomController(repository: _Repository(backend, 'a'),
       profileStore: store, locationChanges: signals,
-      currentLocation: () => fix, hasNetwork: () => true, now: () => clock.now);
+      currentLocation: () => fix, networkState: () => NetworkState.available, now: () => clock.now);
     await a.start(); await a.setNickname('환희'); await a.createRoom();
     await flush();
     backend.room = Room(id: 'room1', inviteCode: 'ABC234', ownerId: 'a',
@@ -339,16 +339,16 @@ void main() {
     backend.offline = true;
     final store = _Store()..nickname = '환희'..roomId = 'room1';
     final signals = _Signals();
-    var connected = false;
+    var connected = NetworkState.unavailable;
     final a = RoomController(repository: _Repository(backend, 'a'),
       profileStore: store, locationChanges: signals,
-      currentLocation: () => null, hasNetwork: () => connected,
+      currentLocation: () => null, networkState: () => connected,
       now: () => clock.now);
     await a.start();
     expect(a.room, isNull);
     signals.tick(); // Remember the disconnected state.
     backend.offline = false;
-    connected = true;
+    connected = NetworkState.available;
     signals.tick();
     await flush();
     expect(a.room?.id, 'room1');
@@ -369,10 +369,10 @@ void main() {
         createdBy: 'a', createdByNickname: '철수', createdAt: clock.now)]);
     final store = _Store()..roomId = room.id;
     final signals = _Signals();
-    var connected = false;
+    var connected = NetworkState.unavailable;
     final controller = RoomController(repository: _Repository(backend, 'b'),
       profileStore: store, snapshotStore: cache, locationChanges: signals,
-      currentLocation: () => null, hasNetwork: () => connected,
+      currentLocation: () => null, networkState: () => connected,
       now: () => clock.now);
     final personal = DestinationController(locationProvider: _Location(),
       headingProvider: _Heading(), networkMonitor: _Network(),
@@ -393,7 +393,7 @@ void main() {
     backend.room = room;
     backend.members['a'] = cache.value!.members.single;
     backend.offline = false;
-    connected = true;
+    connected = NetworkState.available;
     signals.tick();
     await flush();
     expect(controller.error, isNull);

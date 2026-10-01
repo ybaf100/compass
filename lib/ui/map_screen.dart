@@ -1,13 +1,19 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../core/geo_point.dart';
 import '../core/config/service_configuration.dart';
+import '../core/config/service_initialization.dart';
+import '../core/network/network_monitor.dart';
 import '../destination/destination_controller.dart';
 import '../destination/bearing_engine.dart';
 import '../map/map_provider.dart';
 import '../map/map_mode_controller.dart';
+import '../map/kakao_map_state.dart';
+import '../map/kakao_diagnostics.dart';
+import '../map/heading_diagnostics.dart';
 import '../map/member_marker_motion.dart';
 import '../offline/offline_map_controller.dart';
 import '../navigation/navigation_target.dart';
@@ -16,6 +22,8 @@ import 'compass_panel.dart';
 import 'offline_maps_sheet.dart';
 import 'room_sheet.dart';
 import 'service_status_sheet.dart';
+import '../settings/marker_settings.dart';
+import 'marker_settings_sheet.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({
@@ -30,22 +38,26 @@ class MapScreen extends StatefulWidget {
     this.offlineMaps,
     this.mapMode,
     this.configuration,
-    this.supabaseInitialized = true,
-    this.mapboxInitialized = true,
+    this.supabaseInitialization = const ServiceInitialization.initialized(),
+    this.mapboxInitialization = const ServiceInitialization.initialized(),
+    this.kakaoDiagnostics,
+    this.markerSettings,
   });
 
   final DestinationController controller;
   final MapProvider mapProvider;
   final bool mapConfigured;
-  final ValueNotifier<String?> mapError;
+  final ValueNotifier<KakaoFailure?> mapError;
   final RoomController? roomController;
   final NavigationTargetController? navigationController;
   final MapProvider? offlineMapProvider;
   final OfflineMapController? offlineMaps;
   final MapModeController? mapMode;
   final ServiceConfiguration? configuration;
-  final bool supabaseInitialized;
-  final bool mapboxInitialized;
+  final ServiceInitialization supabaseInitialization;
+  final ServiceInitialization mapboxInitialization;
+  final ValueListenable<KakaoDiagnostics>? kakaoDiagnostics;
+  final MarkerSettingsController? markerSettings;
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -62,10 +74,7 @@ class _MapScreenState extends State<MapScreen>
     duration: const Duration(milliseconds: 240),
     value: 1,
   )..addListener(() => _activeMap?.setPinReveal(_pinReveal.value));
-  late final Listenable _headingChanges = Listenable.merge([
-    widget.controller.heading,
-    widget.controller.filteredHeading,
-  ]);
+  late final Listenable _headingChanges = widget.controller.filteredHeading;
   late final MemberMarkerMotion _memberMotion = MemberMarkerMotion(
     vsync: this,
     onFrame: (members) {
@@ -74,9 +83,9 @@ class _MapScreenState extends State<MapScreen>
     },
   );
 
-  MapMode get _mode => widget.mapMode?.mode ?? MapMode.onlineNaver;
+  MapMode get _mode => widget.mapMode?.mode ?? MapMode.onlineKakao;
   MapProvider? get _activeMap => switch (_mode) {
-    MapMode.onlineNaver => widget.mapProvider,
+    MapMode.onlineKakao => widget.mapProvider,
     MapMode.offlineMapbox => widget.offlineMapProvider,
     MapMode.mapUnavailable => null,
   };
@@ -85,6 +94,7 @@ class _MapScreenState extends State<MapScreen>
 
   Timer? _mapTimeout;
   int _mapGeneration = 0;
+  int _lastMapAttempt = 0;
   bool _mapLoaded = false;
   bool _mapTimedOut = false;
   bool _following = true;
@@ -98,13 +108,14 @@ class _MapScreenState extends State<MapScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     widget.controller.addListener(_onControllerChanged);
+    widget.controller.filteredHeading.addListener(_onUserHeadingChanged);
     widget.roomController?.addListener(_onRoomChanged);
     widget.navigationController?.addListener(_onControllerChanged);
     widget.mapMode?.addListener(_onMapModeChanged);
-    widget.mapError.addListener(_onNaverError);
+    widget.mapError.addListener(_onKakaoError);
     _previousMap = _activeMap;
     if (_activeMap != null) _armMapTimeout();
-    _onNaverError();
+    _onKakaoError();
     if (widget.offlineMaps != null) unawaited(widget.offlineMaps!.start());
     unawaited(widget.controller.start());
     if (widget.roomController != null) {
@@ -115,16 +126,35 @@ class _MapScreenState extends State<MapScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(widget.controller.onAppResume());
+      unawaited(_resume());
       widget.roomController?.setForeground(true);
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
+      _mapTimeout?.cancel();
       widget.roomController?.setForeground(false);
     }
   }
 
+  Future<void> _resume() async {
+    await widget.controller.onAppResume();
+    if (!mounted || !widget.mapConfigured ||
+        widget.controller.networkState == NetworkState.unavailable ||
+        widget.mapError.value == KakaoFailure.authentication ||
+        widget.mapMode?.canRetryAutomatically == false) {
+      return;
+    }
+    if (widget.mapError.value != null || widget.mapMode?.kakaoFailed == true ||
+        _mapTimedOut) {
+      _retryMap();
+    } else if (!_mapLoaded && _activeMap != null) {
+      // Native resumes an in-flight authentication/499 retry itself. Recreating
+      // the view here would discard authentication and replenish its budget.
+      _armMapTimeout();
+    }
+  }
+
   void _onControllerChanged() {
-    widget.mapMode?.update(connected: widget.controller.hasNetwork,
+    widget.mapMode?.update(networkState: widget.controller.networkState,
       position: widget.controller.location?.point);
     final target = widget.navigationController?.target;
     final destination = widget.navigationController == null
@@ -145,6 +175,14 @@ class _MapScreenState extends State<MapScreen>
       ));
     }
     if (mounted) setState(() {});
+  }
+
+  void _onUserHeadingChanged() {
+    final map = _activeMap;
+    if (map is UserHeadingMapProvider) {
+      unawaited((map as UserHeadingMapProvider)
+          .setUserHeading(widget.controller.filteredHeading.value));
+    }
   }
 
   void _onRoomChanged() {
@@ -186,15 +224,29 @@ class _MapScreenState extends State<MapScreen>
     if (mounted) setState(() {});
   }
 
-  void _onNaverError() {
-    if (widget.mapError.value != null) widget.mapMode?.naverFailure();
+  void _onKakaoError() {
+    final failure = widget.mapError.value;
+    if (failure != null) {
+      _mapTimeout?.cancel();
+      widget.mapMode?.kakaoFailure(failure);
+    }
   }
 
   void _onMapModeChanged() {
     final old = _previousMap;
     final next = _activeMap;
-    if (old == next) return;
-    if (_mode == MapMode.onlineNaver && old != next) {
+    final attempt = widget.mapMode?.attempt ?? 0;
+    if (old == next) {
+      if (attempt != _lastMapAttempt && _mode == MapMode.onlineKakao) {
+        _lastMapAttempt = attempt;
+        _restartCurrentMap();
+      } else if (mounted) {
+        setState(() {});
+      }
+      return;
+    }
+    _lastMapAttempt = attempt;
+    if (_mode == MapMode.onlineKakao && old != next) {
       // A previous auth/load error can have been caused by a transient outage.
       // Give the new native map a fresh attempt; a persistent error is reported
       // again by the SDK or caught by the load timeout.
@@ -221,6 +273,7 @@ class _MapScreenState extends State<MapScreen>
   void _syncMapOverlays() {
     final map = _activeMap;
     if (map == null) return;
+    _onUserHeadingChanged();
     final destination = widget.navigationController == null
         ? widget.controller.destination
         : widget.navigationController!.target?.asDestination;
@@ -247,24 +300,43 @@ class _MapScreenState extends State<MapScreen>
     unawaited(operation.catchError((Object error) {
       if (mounted && providerAtStart == _activeMap) {
         setState(() => _mapOperationError = '지도를 조작할 수 없습니다. 다시 시도하세요.');
-        if (_mode == MapMode.onlineNaver) widget.mapMode?.naverFailure();
+        if (_mode == MapMode.onlineKakao) widget.mapError.value = KakaoFailure.bridge;
       }
     }));
   }
 
   void _armMapTimeout() {
     _mapTimeout?.cancel();
+    final generation = _mapGeneration;
     _mapTimeout = Timer(const Duration(seconds: 18), () {
-      if (mounted && !_mapLoaded) {
+      if (mounted && generation == _mapGeneration && !_mapLoaded) {
+        // iOS owns its bounded prepare/499 retries. A Flutter load timer must
+        // not destroy that native view at the first preparation deadline.
+        if (_mode == MapMode.onlineKakao &&
+            widget.kakaoDiagnostics?.value.nativeTimeoutManaged == true) {
+          return;
+        }
         setState(() => _mapTimedOut = true);
-        if (_mode == MapMode.onlineNaver) widget.mapMode?.naverFailure();
+        if (_mode == MapMode.onlineKakao) widget.mapError.value = KakaoFailure.timeout;
       }
     });
   }
 
   void _retryMap() {
+    if (widget.controller.networkState == NetworkState.unavailable) {
+      unawaited(widget.controller.refreshNetwork());
+      return;
+    }
     widget.mapError.value = null;
-    widget.mapMode?.retryNaver();
+    if (widget.mapMode != null) {
+      widget.mapMode!.retryKakao();
+    } else {
+      _restartCurrentMap();
+    }
+  }
+
+  void _restartCurrentMap() {
+    widget.mapError.value = null;
     _activeMap?.reset();
     setState(() {
       _mapGeneration++;
@@ -272,7 +344,7 @@ class _MapScreenState extends State<MapScreen>
       _mapTimedOut = false;
       _mapOperationError = null;
     });
-    _armMapTimeout();
+    if (_activeMap != null) _armMapTimeout();
   }
 
   void _recenter() {
@@ -291,10 +363,11 @@ class _MapScreenState extends State<MapScreen>
     _mapTimeout?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_onControllerChanged);
+    widget.controller.filteredHeading.removeListener(_onUserHeadingChanged);
     widget.roomController?.removeListener(_onRoomChanged);
     widget.navigationController?.removeListener(_onControllerChanged);
     widget.mapMode?.removeListener(_onMapModeChanged);
-    widget.mapError.removeListener(_onNaverError);
+    widget.mapError.removeListener(_onKakaoError);
     _memberMotion.dispose();
     _expansion.dispose();
     _pinReveal.dispose();
@@ -379,19 +452,8 @@ class _MapScreenState extends State<MapScreen>
                         destinationBearing: widget.navigationController == null
                             ? widget.controller.destinationBearing
                             : widget.navigationController!.bearing,
-                        heading: widget.controller.heading.value,
                         filteredHeading:
                             widget.controller.filteredHeading.value,
-                        modeLabel: widget.navigationController?.target?.modeLabel,
-                        notice: widget.navigationController?.target?.notice,
-                        emptyMessage: widget.navigationController?.target?.notice,
-                        clearLabel: widget.navigationController == null ||
-                            widget.navigationController!.mode == TargetMode.personal
-                            ? '목적지 해제' : '내 목적지로 전환',
-                        onClear: widget.navigationController == null ||
-                            widget.navigationController!.mode == TargetMode.personal
-                            ? widget.controller.clearDestination
-                            : widget.navigationController!.selectPersonal,
                       ),
                     ),
                   ),
@@ -406,16 +468,17 @@ class _MapScreenState extends State<MapScreen>
 
   Widget _buildMap(double collapsed) {
     if (widget.mapMode == null && !widget.mapConfigured) {
-      return _mapNotice('네이버 지도 Client ID가 설정되지 않았습니다.',
-        '실행 시 --dart-define=NAVER_MAP_CLIENT_ID=발급받은_ID를 지정하세요.');
+      return _mapNotice('카카오 지도 Native app key가 설정되지 않았습니다.',
+        '실행 시 --dart-define=KAKAO_NATIVE_APP_KEY=Native_app_key를 지정하세요.');
     }
     if (_mode == MapMode.mapUnavailable || _activeMap == null) {
-      return _mapNotice('오프라인 · 이 지역의 지도가 없습니다.',
+      return _mapNotice(_unavailableMessage,
         '화살표는 계속 사용할 수 있습니다. 온라인 복구 또는 지역 다운로드를 확인하세요.',
-        onRetry: widget.mapConfigured && widget.controller.hasNetwork != false
-            ? widget.mapMode?.retryNaver : null);
+        onRetry: widget.mapConfigured && widget.controller.networkState != NetworkState.unavailable
+            ? _retryMap : null);
     }
     final map = _activeMap!;
+    final generation = _mapGeneration;
     return Stack(children: [
       Positioned.fill(
         child: AnimatedSwitcher(
@@ -428,12 +491,13 @@ class _MapScreenState extends State<MapScreen>
             onNamedPlacePicked: (point, name) =>
                 widget.controller.selectPoint(point, name: name),
             onLoaded: () {
+              if (!mounted || generation != _mapGeneration || map != _activeMap) return;
               _mapTimeout?.cancel();
               if (mounted) {
                 _syncMapOverlays();
-                if (_mode == MapMode.onlineNaver &&
+                if (_mode == MapMode.onlineKakao &&
                     widget.mapError.value == null) {
-                  widget.mapMode?.naverLoaded();
+                  widget.mapMode?.kakaoLoaded();
                 }
                 setState(() {
                   _mapLoaded = true;
@@ -451,24 +515,52 @@ class _MapScreenState extends State<MapScreen>
           ),
         ),
       ),
-      ValueListenableBuilder<String?>(
+      ValueListenableBuilder<KakaoFailure?>(
         valueListenable: widget.mapError,
         builder: (context, authError, _) {
-          final message = (_mode == MapMode.onlineNaver ? authError : null) ??
+          final message = (_mode == MapMode.onlineKakao && authError != null
+                  ? _failureMessage(authError) : null) ??
               _mapOperationError ??
-              (widget.controller.hasNetwork == false
-                  && _mode == MapMode.onlineNaver
-                  ? '온라인 지도를 불러올 수 없습니다.'
-                  : _mapTimedOut ? '지도 로딩 시간이 초과되었습니다.' : null);
+              (widget.controller.networkState == NetworkState.unavailable
+                  && _mode == MapMode.onlineKakao
+                  ? '오프라인 · 이 지역의 지도가 없습니다.'
+                  : _mapTimedOut ? (_mode == MapMode.onlineKakao
+                      ? '카카오 지도 응답이 없습니다.' : '오프라인 지도 응답이 없습니다.') : null);
           if (message != null) {
             return Positioned.fill(child: _mapNotice(message,
-                '연결 상태와 네이버 지도 설정을 확인하세요.', onRetry: _retryMap));
+                '연결 상태와 카카오 지도 설정을 확인하세요.', onRetry: _retryMap));
           }
           if (_mapLoaded) return const SizedBox.shrink();
-          return const Center(child: CircularProgressIndicator.adaptive());
+          return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const CircularProgressIndicator.adaptive(),
+            if (widget.controller.networkState == NetworkState.unknown) ...[
+              const SizedBox(height: 12),
+              const Text('연결 상태를 확인하는 중입니다.'),
+            ],
+          ]));
         },
       ),
     ]);
+  }
+
+  static String _failureMessage(KakaoFailure reason) => switch (reason) {
+    KakaoFailure.prepareTimeout => '카카오 지도 준비 응답이 없습니다.',
+    KakaoFailure.timeout => '카카오 지도 응답이 없습니다.',
+    _ => '카카오 지도 연결에 실패했습니다.',
+  };
+
+  String get _unavailableMessage {
+    final network = widget.mapMode?.networkState ?? widget.controller.networkState;
+    if (network == NetworkState.unavailable) {
+      return '오프라인 · 이 지역의 지도가 없습니다.';
+    }
+    final failure = widget.mapMode?.failure ?? widget.mapError.value;
+    if (failure != null) return _failureMessage(failure);
+    if (!widget.mapConfigured) return '카카오 지도 Native app key가 설정되지 않았습니다.';
+    if (network == NetworkState.unknown) {
+      return '연결 상태를 확인하는 중입니다.';
+    }
+    return '온라인 지도를 다시 연결하는 중입니다.';
   }
 
   Widget _mapNotice(String title, String detail, {VoidCallback? onRetry}) =>
@@ -512,7 +604,7 @@ class _MapScreenState extends State<MapScreen>
                 const Icon(Icons.navigation_rounded,
                     color: Color(0xFF6BDBED)),
                 const SizedBox(width: 8),
-                const Expanded(child: Text('목적지 나침반',
+                const Expanded(child: Text('passcom',
                     style: TextStyle(color: Colors.white,
                         fontWeight: FontWeight.w700))),
                 if (controller.destination != null)
@@ -531,9 +623,13 @@ class _MapScreenState extends State<MapScreen>
                 PopupMenuButton<String>(
                   tooltip: '설정 및 오프라인 지도',
                   icon: const Icon(Icons.more_vert, color: Colors.white),
-                  onSelected: (value) => value == 'offline'
-                      ? _showOfflineMaps() : _showServiceStatus(),
+                  onSelected: (value) {
+                    if (value == 'markers') { _showMarkerSettings(); }
+                    else if (value == 'offline') { _showOfflineMaps(); }
+                    else { _showServiceStatus(); }
+                  },
                   itemBuilder: (context) => const [
+                    PopupMenuItem(value: 'markers', child: Text('지도 마커 크기')),
                     PopupMenuItem(value: 'offline',
                       child: Text('오프라인 지도')),
                     PopupMenuItem(value: 'status',
@@ -551,15 +647,15 @@ class _MapScreenState extends State<MapScreen>
               ]),
             ),
           ),
-          if (_mode != MapMode.onlineNaver)
+          if (_mode != MapMode.onlineKakao)
             Align(alignment: Alignment.centerLeft,
-              child: widget.mapConfigured && controller.hasNetwork != false
+              child: widget.mapConfigured && controller.networkState != NetworkState.unavailable
                   ? ActionChip(
                       visualDensity: VisualDensity.compact,
                       label: Text(_mode == MapMode.offlineMapbox
                           ? '오프라인 지도 · 온라인 재시도'
-                          : '오프라인 · 지도 없음 · 온라인 재시도'),
-                      onPressed: widget.mapMode?.retryNaver,
+                          : '지도 연결 확인 · 온라인 재시도'),
+                      onPressed: _retryMap,
                     )
                   : Chip(visualDensity: VisualDensity.compact,
                       label: Text(_mode == MapMode.offlineMapbox
@@ -605,7 +701,9 @@ class _MapScreenState extends State<MapScreen>
           '현재 위치를 받을 수 없습니다.', '다시 시도',
           () => controller.refreshLocation(requestPermission: true)),
       LocationState.checking || LocationState.acquiring => (
-          '현재 위치를 확인하고 있습니다.', '', null),
+          '현재 위치를 찾는 중입니다.',
+          controller.firstFixDelayed ? '다시 시도' : '',
+          controller.firstFixDelayed ? controller.refreshLocation : null),
       LocationState.ready => ('', '', null),
     };
     final message = controller.persistenceFailed
@@ -670,12 +768,12 @@ class _MapScreenState extends State<MapScreen>
                 const SizedBox(height: 6),
                 Row(children: [
                   Expanded(child: OutlinedButton(
-                    onPressed: widget.roomController!.hasNetwork == false
+                    onPressed: widget.roomController!.networkState == NetworkState.unavailable
                         ? null : () => _shareSelection(ping: true),
                     child: const Text('친구들에게 Ping'))),
                   const SizedBox(width: 8),
                   Expanded(child: FilledButton.tonal(
-                    onPressed: widget.roomController!.hasNetwork == false
+                    onPressed: widget.roomController!.networkState == NetworkState.unavailable
                         ? null : () => _shareSelection(ping: false),
                     child: const Text('모두의 목적지'))),
                 ]),
@@ -713,7 +811,15 @@ class _MapScreenState extends State<MapScreen>
       showDragHandle: true, builder: (context) => FractionallySizedBox(
         heightFactor: 0.76, child: OfflineMapsSheet(controller: offline,
           currentPosition: widget.controller.location?.point,
-          online: widget.controller.hasNetwork != false)));
+          online: widget.controller.networkState != NetworkState.unavailable)));
+  }
+
+  void _showMarkerSettings() {
+    final settings = widget.markerSettings;
+    if (settings == null) return;
+    showModalBottomSheet<void>(context: context, isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => MarkerSettingsSheet(controller: settings));
   }
 
   void _showServiceStatus() {
@@ -721,13 +827,35 @@ class _MapScreenState extends State<MapScreen>
     if (settings == null) return;
     showModalBottomSheet<void>(context: context, isScrollControlled: true,
       showDragHandle: true,
-      builder: (context) => ServiceStatusSheet(
-        naver: settings.naverStatus,
+      builder: (context) => AnimatedBuilder(
+        animation: Listenable.merge([widget.controller, widget.mapMode,
+          widget.mapError, widget.offlineMaps, widget.kakaoDiagnostics,
+          widget.controller.heading, widget.controller.filteredHeading]),
+        builder: (context, _) => ServiceStatusSheet(
+        kakao: settings.kakaoStatus,
         supabase: settings.supabaseStatus,
         mapbox: settings.mapboxStatus,
-        naverError: widget.mapError.value,
-        supabaseInitialized: widget.supabaseInitialized,
-        mapboxInitialized: widget.mapboxInitialized));
+        network: widget.controller.networkStatus,
+        kakaoState: widget.mapMode?.kakaoState ?? (widget.mapError.value == KakaoFailure.timeout ||
+            widget.mapError.value == KakaoFailure.prepareTimeout
+            ? KakaoState.timedOut : widget.mapError.value != null ? KakaoState.failed
+                : _mapLoaded ? KakaoState.loaded : KakaoState.initializing),
+        kakaoFailure: widget.mapMode?.failure ?? widget.mapError.value,
+        kakaoDiagnostics: widget.kakaoDiagnostics?.value ?? const KakaoDiagnostics(),
+        headingDiagnostics: HeadingDiagnostics.snapshot(
+          reading: widget.controller.heading.value,
+          filteredHeading: widget.controller.filteredHeading.value,
+          cameraBearing: widget.mapProvider is CameraAwareMapProvider
+              ? (widget.mapProvider as CameraAwareMapProvider).cameraState?.bearing : null),
+        supabaseInitialization: widget.supabaseInitialization,
+        mapboxInitialization: widget.mapboxInitialization,
+        mapboxFailed: widget.offlineMaps?.error != null ||
+            (_mode == MapMode.offlineMapbox && (_mapTimedOut || _mapOperationError != null)),
+        locationAccess: widget.controller.locationAccess,
+        locationPrecision: widget.controller.locationPrecision,
+        locationFailure: widget.controller.locationFailure,
+        waitingForLocation: widget.controller.locationState == LocationState.acquiring,
+      )));
   }
 
   void _showRoomSheet() {

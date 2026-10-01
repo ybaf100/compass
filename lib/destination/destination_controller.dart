@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
+import '../core/diagnostics.dart';
 import '../core/compass/heading_filter.dart';
 import '../core/compass/heading_provider.dart';
 import '../core/geo_point.dart';
@@ -47,13 +49,21 @@ class DestinationController extends ChangeNotifier {
   String? selectedName;
   LocationFix? location;
   LocationState locationState = LocationState.checking;
-  bool? hasNetwork;
+  NetworkStatus networkStatus = const NetworkStatus.unknown();
+  NetworkState get networkState => networkStatus.state;
+  LocationAccess? locationAccess;
+  LocationPrecision locationPrecision = LocationPrecision.unknown;
+  LocationFailure? locationFailure;
+  bool firstFixDelayed = false;
   bool persistenceFailed = false;
 
   StreamSubscription<LocationFix>? _positions;
   StreamSubscription<bool>? _service;
   StreamSubscription<HeadingReading?>? _headings;
-  StreamSubscription<bool>? _network;
+  StreamSubscription<NetworkStatus>? _network;
+  Timer? _networkRetry;
+  int _networkGeneration = 0;
+  int _networkRevision = 0;
   Timer? _firstFixTimeout;
   bool _disposed = false;
   bool _destinationTouched = false;
@@ -69,14 +79,15 @@ class DestinationController extends ChangeNotifier {
       : BearingEngine.bearing(location!.point, destination!.point);
 
   Future<void> start() async {
-    _network = _networkMonitor.changes.listen((connected) {
-      hasNetwork = connected;
-      _notify();
+    _network = _networkMonitor.changes.listen((status) {
+      _networkRevision++;
+      _networkRetry?.cancel();
+      _setNetwork(status);
     }, onError: (Object error) {
-      hasNetwork = false;
-      _notify();
+      _networkRevision++;
+      _setNetwork(const NetworkStatus.unknown(failure: NetworkFailure.plugin));
     });
-    unawaited(_checkNetwork());
+    unawaited(refreshNetwork());
 
     _headings = _headingProvider.heading.listen((reading) {
       heading.value = reading;
@@ -105,6 +116,8 @@ class DestinationController extends ChangeNotifier {
         _notify();
       }
     }, onError: (Object error) {
+      locationFailure = _locationFailure(error, LocationFailure.accessCheck);
+      diagnosticEvent('location.serviceStream', locationFailure!.name);
       locationState = LocationState.unavailable;
       _notify();
     });
@@ -117,22 +130,42 @@ class DestinationController extends ChangeNotifier {
     await refreshLocation(requestPermission: true);
   }
 
-  Future<void> _checkNetwork() async {
+  void _setNetwork(NetworkStatus status) {
+    if (_disposed) return;
+    networkStatus = status;
+    diagnosticEvent('network.state', status.state.name);
+    if (status.failure != null) diagnosticEvent('network.failure', status.failure!.name);
+    _notify();
+  }
+
+  /// Two bounded follow-up checks accommodate NWPathMonitor startup/reconnect
+  /// transients. A newer stream event always wins over an in-flight query.
+  Future<void> refreshNetwork() async {
+    _networkRetry?.cancel();
+    final generation = ++_networkGeneration;
+    _setNetwork(const NetworkStatus.unknown());
+    await _checkNetwork(generation, 0);
+  }
+
+  Future<void> _checkNetwork(int generation, int attempt) async {
+    final revision = _networkRevision;
+    NetworkStatus status;
     try {
-      final connected = await _networkMonitor.hasConnection;
-      if (_disposed) return;
-      hasNetwork = connected;
-      _notify();
-    } catch (_) {
-      if (_disposed) return;
-      hasNetwork = false;
-      _notify();
+      status = await _networkMonitor.current.timeout(const Duration(seconds: 4));
+    } catch (error) {
+      status = NetworkStatus.unknown(failure: error is TimeoutException
+          ? NetworkFailure.timeout : NetworkFailure.plugin);
+    }
+    if (_disposed || generation != _networkGeneration || revision != _networkRevision) return;
+    _setNetwork(status);
+    if (status.state != NetworkState.available && attempt < 2) {
+      _networkRetry = Timer(Duration(milliseconds: attempt == 0 ? 500 : 1500),
+        () => unawaited(_checkNetwork(generation, attempt + 1)));
     }
   }
 
   Future<void> onAppResume() async {
-    await _checkNetwork();
-    await refreshLocation();
+    await Future.wait([refreshNetwork(), refreshLocation()]);
   }
 
   Future<void> refreshLocation({bool requestPermission = false}) async {
@@ -142,6 +175,8 @@ class DestinationController extends ChangeNotifier {
     _positions = null;
     if (_disposed || generation != _locationGeneration) return;
     location = null;
+    locationFailure = null;
+    firstFixDelayed = false;
     locationState = LocationState.checking;
     _notify();
 
@@ -150,6 +185,11 @@ class DestinationController extends ChangeNotifier {
         requestPermission: requestPermission,
       );
       if (_disposed || generation != _locationGeneration) return;
+      locationAccess = access;
+      if (_locationProvider is LocationDiagnosticsProvider) {
+        locationPrecision = (_locationProvider as LocationDiagnosticsProvider).precision;
+      }
+      diagnosticEvent('location.access', access.name);
       if (access != LocationAccess.granted) {
         location = null;
         locationState = switch (access) {
@@ -167,7 +207,8 @@ class DestinationController extends ChangeNotifier {
       _notify();
       _firstFixTimeout = Timer(const Duration(seconds: 15), () {
         if (!_disposed && generation == _locationGeneration && location == null) {
-          locationState = LocationState.unavailable;
+          firstFixDelayed = true;
+          diagnosticEvent('location.firstFix', 'delayed');
           _notify();
         }
       });
@@ -176,6 +217,9 @@ class DestinationController extends ChangeNotifier {
           return;
         }
         _firstFixTimeout?.cancel();
+        if (location == null) diagnosticEvent('location.firstFix', 'received');
+        firstFixDelayed = false;
+        locationFailure = null;
         location = fix;
         locationState = fix.accuracyMeters > 65
             ? LocationState.poorAccuracy
@@ -186,17 +230,34 @@ class DestinationController extends ChangeNotifier {
         if (_disposed || generation != _locationGeneration) return;
         _firstFixTimeout?.cancel();
         location = null;
-        locationState = LocationState.unavailable;
+        locationFailure = _locationFailure(error, LocationFailure.stream);
+        diagnosticEvent('location.stream', locationFailure!.name);
+        locationState = _stateForFailure(locationFailure!);
         _notify();
       });
-    } catch (_) {
+    } catch (error) {
       if (_disposed || generation != _locationGeneration) return;
       _firstFixTimeout?.cancel();
       location = null;
-      locationState = LocationState.unavailable;
+      locationFailure = _locationFailure(error, LocationFailure.accessCheck);
+      diagnosticEvent('location.access', locationFailure!.name);
+      locationState = _stateForFailure(locationFailure!);
       _notify();
     }
   }
+
+  static LocationFailure _locationFailure(Object error, LocationFailure fallback) => switch (error) {
+    LocationProviderException() => error.category,
+    MissingPluginException() || PlatformException() => LocationFailure.plugin,
+    TimeoutException() => LocationFailure.timeout,
+    _ => fallback,
+  };
+
+  static LocationState _stateForFailure(LocationFailure failure) => switch (failure) {
+    LocationFailure.permissionDenied => LocationState.permissionDenied,
+    LocationFailure.serviceDisabled => LocationState.serviceDisabled,
+    _ => LocationState.unavailable,
+  };
 
   Future<void> _updateHeadingLocation(LocationFix fix) async {
     try {
@@ -272,6 +333,8 @@ class DestinationController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _networkGeneration++;
+    _networkRetry?.cancel();
     _locationGeneration++;
     _firstFixTimeout?.cancel();
     unawaited(_positions?.cancel());

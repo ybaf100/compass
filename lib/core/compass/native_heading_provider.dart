@@ -8,19 +8,25 @@ class NativeHeadingProvider implements HeadingProvider {
   static const _control = MethodChannel('app.destination_compass/heading_control');
 
   @override
-  Stream<HeadingReading?> get heading => _events.receiveBroadcastStream().map(
-    (value) {
-      if (value is! Map) return null;
-      final degrees = value['heading'];
-      if (degrees is! num || !degrees.toDouble().isFinite) return null;
-      final accuracy = value['accuracy'];
-      return HeadingReading(
-        degrees: BearingEngine.normalize(degrees.toDouble()),
-        isTrueNorth: value['trueNorth'] == true,
-        accuracyDegrees: accuracy is num ? accuracy.toDouble() : null,
-      );
-    },
-  );
+  Stream<HeadingReading?> get heading =>
+      _events.receiveBroadcastStream().map(decodeReading);
+
+  /// Pure native boundary decoder. Never applies orientation angle offsets.
+  /// Unknown native diagnostic strings cannot reach UI or logs.
+  static HeadingReading? decodeReading(Object? value) {
+    if (value is! Map) return null;
+    final degrees = value['heading'];
+    if (degrees is! num || !degrees.toDouble().isFinite) return null;
+    final accuracy = value['accuracy'];
+    return HeadingReading(
+      degrees: BearingEngine.normalize(degrees.toDouble()),
+      isTrueNorth: value['trueNorth'] == true,
+      accuracyDegrees: accuracy is num && accuracy.toDouble().isFinite
+          ? accuracy.toDouble() : null,
+      interfaceOrientation: HeadingOrientation.decode(value['interfaceOrientation']),
+      headingOrientation: HeadingOrientation.decode(value['headingOrientation']),
+    );
+  }
 
   @override
   Future<void> updateLocation(

@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 
 import 'core/compass/native_heading_provider.dart';
 import 'core/config/service_configuration.dart';
+import 'core/config/service_initialization.dart';
 import 'core/location/geolocator_location_provider.dart';
 import 'core/network/network_monitor.dart';
 import 'destination/destination_controller.dart';
 import 'destination/destination_store.dart';
-import 'map/naver_map_provider.dart';
+import 'map/kakao_map_provider.dart';
+import 'map/kakao_map_state.dart';
 import 'map/mapbox_offline_map_provider.dart';
 import 'map/map_mode_controller.dart';
 import 'offline/offline_map_controller.dart';
@@ -20,6 +22,7 @@ import 'room/room_controller.dart';
 import 'room/room_repository.dart';
 import 'room/room_snapshot_store.dart';
 import 'ui/map_screen.dart';
+import 'settings/marker_settings.dart';
 
 class DestinationCompassApp extends StatefulWidget {
   const DestinationCompassApp({
@@ -29,13 +32,17 @@ class DestinationCompassApp extends StatefulWidget {
     required this.roomRepository,
     required this.mapboxConfigured,
     required this.configuration,
+    required this.supabaseInitialization,
+    required this.mapboxInitialization,
   });
 
   final bool mapConfigured;
-  final ValueNotifier<String?> mapError;
+  final ValueNotifier<KakaoFailure?> mapError;
   final RoomRepository? roomRepository;
   final bool mapboxConfigured;
   final ServiceConfiguration configuration;
+  final ServiceInitialization supabaseInitialization;
+  final ServiceInitialization mapboxInitialization;
 
   @override
   State<DestinationCompassApp> createState() => _DestinationCompassAppState();
@@ -48,29 +55,43 @@ class _DestinationCompassAppState extends State<DestinationCompassApp> {
     networkMonitor: ConnectivityNetworkMonitor(),
     store: PreferencesDestinationStore(),
   );
-  late final NaverMapProvider _mapProvider = NaverMapProvider();
+  late final KakaoMapProvider _mapProvider = KakaoMapProvider(
+    appKey: widget.configuration.kakaoNativeAppKey,
+    onFailure: (message) => widget.mapError.value = message);
   late final MapboxOfflineMapProvider? _offlineProvider =
       widget.mapboxConfigured ? MapboxOfflineMapProvider() : null;
   late final OfflineMapController _offlineMaps = OfflineMapController(
     repository: PreferencesOfflineRegionRepository(),
     backend: widget.mapboxConfigured ? MapboxTileBackend() : null);
   late final MapModeController _mapMode = MapModeController(
-    naverConfigured: widget.mapConfigured, offlineMaps: _offlineMaps);
+    kakaoConfigured: widget.mapConfigured, offlineMaps: _offlineMaps);
   late final RoomController _roomController = RoomController(
     repository: widget.roomRepository,
     profileStore: PreferencesProfileStore(),
     locationChanges: _controller,
     currentLocation: () => _controller.location,
-    hasNetwork: () => _controller.hasNetwork,
+    networkState: () => _controller.networkState,
     snapshotStore: PreferencesRoomSnapshotStore(),
   );
   late final NavigationTargetController _navigation =
       NavigationTargetController(_controller, _roomController);
+  final _markerSettings = MarkerSettingsController(PreferencesMarkerSettingsStore());
 
   @override
   void initState() {
     super.initState();
+    unawaited(_mapProvider.refreshRuntimeIdentity());
     _mapMode.addListener(_onModeChanged);
+    _markerSettings.addListener(_applyMarkerScales);
+    _applyMarkerScales();
+    unawaited(_markerSettings.restore());
+  }
+
+  void _applyMarkerScales() {
+    unawaited(_mapProvider.setMarkerScale(_markerSettings.value.online)
+        .catchError((Object _) {}));
+    unawaited(_offlineProvider?.setMarkerScale(_markerSettings.value.offline)
+        .catchError((Object _) {}) ?? Future<void>.value());
   }
 
   void _onModeChanged() {
@@ -80,6 +101,8 @@ class _DestinationCompassAppState extends State<DestinationCompassApp> {
 
   @override
   void dispose() {
+    _markerSettings.removeListener(_applyMarkerScales);
+    _markerSettings.dispose();
     _navigation.dispose();
     _mapMode.removeListener(_onModeChanged);
     _mapMode.dispose();
@@ -95,7 +118,7 @@ class _DestinationCompassAppState extends State<DestinationCompassApp> {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: '목적지 나침반',
+    title: 'passcom',
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
       useMaterial3: true,
@@ -107,14 +130,16 @@ class _DestinationCompassAppState extends State<DestinationCompassApp> {
       mapProvider: _mapProvider,
       mapConfigured: widget.mapConfigured,
       mapError: widget.mapError,
+      kakaoDiagnostics: _mapProvider.diagnostics,
       roomController: _roomController,
       navigationController: _navigation,
       offlineMapProvider: _offlineProvider,
       offlineMaps: _offlineMaps,
       mapMode: _mapMode,
       configuration: widget.configuration,
-      supabaseInitialized: widget.roomRepository != null,
-      mapboxInitialized: widget.mapboxConfigured,
+      supabaseInitialization: widget.supabaseInitialization,
+      mapboxInitialization: widget.mapboxInitialization,
+      markerSettings: _markerSettings,
     ),
   );
 }

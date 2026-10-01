@@ -1,8 +1,14 @@
-name: verify compass
+name: verify passcom
 on:
   push:
     branches: [main, 'feature/**']
   pull_request:
+
+# Push and PR events for the same source branch share a group. Other branches
+# and forks retain their own runs; only superseded builds are cancelled.
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   android:
@@ -18,28 +24,36 @@ jobs:
           channel: stable
           cache: true
       - run: bash tool/bootstrap.sh
-      - name: Verify repeat bootstrap and permanent app ID
+      - name: Verify repeat bootstrap, passcom branding and permanent app ID
         run: |
           bash tool/bootstrap.sh
           python3 tool/verify_app_identity.py
+          python3 tool/app_icons.py --verify-applied
       - run: flutter analyze
+      - run: python3 tool/test_kakao_marker_contract.py
+      - run: python3 tool/test_release_tooling.py
       - run: flutter test
+      - name: Test Android production marker geometry
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest
       - name: Build Android debug APK
         env:
-          NAVER_MAP_CLIENT_ID: ${{ vars.NAVER_MAP_CLIENT_ID }}
+          KAKAO_NATIVE_APP_KEY: ${{ vars.KAKAO_NATIVE_APP_KEY }}
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
           MAPBOX_ACCESS_TOKEN: ${{ vars.MAPBOX_ACCESS_TOKEN }}
         run: |
           flutter build apk --debug \
-            --dart-define="NAVER_MAP_CLIENT_ID=${NAVER_MAP_CLIENT_ID}" \
+            --dart-define="KAKAO_NATIVE_APP_KEY=${KAKAO_NATIVE_APP_KEY}" \
             --dart-define="SUPABASE_URL=${SUPABASE_URL}" \
             --dart-define="SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY}" \
             --dart-define="MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN}"
+      - name: Verify compiled APK name and package
+        run: python3 tool/verify_app_identity.py --apk build/app/outputs/flutter-apk/app-debug.apk
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: compass-android-debug
+          name: passcom-android-debug
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
           retention-days: 14
@@ -48,33 +62,52 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Test SDK-independent Kakao iOS lifecycle policy
+        run: |
+          swiftc -parse-as-library platform_overrides/ios/KakaoEngineLifecycle.swift tool/test_kakao_lifecycle.swift -o "$RUNNER_TEMP/kakao-lifecycle-tests"
+          "$RUNNER_TEMP/kakao-lifecycle-tests"
+      - name: Test SDK-independent iOS marker geometry
+        run: |
+          swiftc -parse-as-library platform_overrides/ios/KakaoMarkerGeometry.swift tool/test_kakao_markers.swift -o "$RUNNER_TEMP/kakao-marker-tests"
+          "$RUNNER_TEMP/kakao-marker-tests"
+      - name: Test production iOS heading orientation conversion
+        run: |
+          swiftc -parse-as-library platform_overrides/ios/HeadingOrientation.swift tool/test_heading_orientation.swift -o "$RUNNER_TEMP/heading-orientation-tests"
+          "$RUNNER_TEMP/heading-orientation-tests"
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
       - run: bash tool/bootstrap.sh
       - run: python3 tool/verify_app_identity.py
+      - run: python3 tool/app_icons.py --verify-applied
+      - run: xcodebuild -version
       - name: Build iOS simulator app
         env:
-          NAVER_MAP_CLIENT_ID: ${{ vars.NAVER_MAP_CLIENT_ID }}
+          KAKAO_NATIVE_APP_KEY: ${{ vars.KAKAO_NATIVE_APP_KEY }}
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
           MAPBOX_ACCESS_TOKEN: ${{ vars.MAPBOX_ACCESS_TOKEN }}
         run: |
           flutter build ios --simulator --debug \
-            --dart-define="NAVER_MAP_CLIENT_ID=${NAVER_MAP_CLIENT_ID}" \
+            --dart-define="KAKAO_NATIVE_APP_KEY=${KAKAO_NATIVE_APP_KEY}" \
             --dart-define="SUPABASE_URL=${SUPABASE_URL}" \
             --dart-define="SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY}" \
             --dart-define="MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN}"
-      - name: Package iOS simulator app
-        run: ditto -c -k --sequesterRsrc --keepParent build/ios/iphonesimulator/Runner.app build/ios/compass-ios-simulator.zip
+      - name: Verify and package iOS simulator app
+        run: |
+          python3 tool/verify_app_identity.py --ios-app build/ios/iphonesimulator/Runner.app
+          ditto -c -k --sequesterRsrc --keepParent build/ios/iphonesimulator/Runner.app build/ios/passcom-ios-simulator.zip
       - name: Upload iOS simulator app
         uses: actions/upload-artifact@v4
         with:
-          name: compass-ios-simulator
-          path: build/ios/compass-ios-simulator.zip
+          name: passcom-ios-simulator
+          path: build/ios/passcom-ios-simulator.zip
           if-no-files-found: error
           retention-days: 14
+      - name: Run iPad simulator native plugin lifecycle smoke test
+        timeout-minutes: 35
+        run: python3 tool/run_ipad_smoke_test.py
 
   ios-sideload:
     runs-on: macos-latest
@@ -86,15 +119,16 @@ jobs:
           cache: true
       - run: bash tool/bootstrap.sh
       - run: python3 tool/verify_app_identity.py
+      - run: python3 tool/app_icons.py --verify-applied
       - name: Build unsigned iOS device app
         env:
-          NAVER_MAP_CLIENT_ID: ${{ vars.NAVER_MAP_CLIENT_ID }}
+          KAKAO_NATIVE_APP_KEY: ${{ vars.KAKAO_NATIVE_APP_KEY }}
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
           MAPBOX_ACCESS_TOKEN: ${{ vars.MAPBOX_ACCESS_TOKEN }}
         run: |
           flutter build ios --release --no-codesign \
-            --dart-define="NAVER_MAP_CLIENT_ID=${NAVER_MAP_CLIENT_ID}" \
+            --dart-define="KAKAO_NATIVE_APP_KEY=${KAKAO_NATIVE_APP_KEY}" \
             --dart-define="SUPABASE_URL=${SUPABASE_URL}" \
             --dart-define="SUPABASE_PUBLISHABLE_KEY=${SUPABASE_PUBLISHABLE_KEY}" \
             --dart-define="MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN}"
@@ -103,17 +137,16 @@ jobs:
           mkdir -p build/ios/ipa/Payload
           ditto build/ios/iphoneos/Runner.app build/ios/ipa/Payload/Runner.app
           app=build/ios/ipa/Payload/Runner.app
-          /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Compass' "$app/Info.plist"
-          /usr/libexec/PlistBuddy -c 'Set :CFBundleName Compass' "$app/Info.plist"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")" = com.ybaf100.compass
+          python3 tool/verify_app_identity.py --ios-app "$app"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleSupportedPlatforms:0' "$app/Info.plist")" = iPhoneOS
           lipo -archs "$app/Runner" | grep -qw arm64
-          (cd build/ios/ipa && ditto -c -k --sequesterRsrc --keepParent Payload compass-ios-sideload-unsigned.ipa)
-          unzip -tq build/ios/ipa/compass-ios-sideload-unsigned.ipa
+          (cd build/ios/ipa && ditto -c -k --sequesterRsrc --keepParent Payload passcom-ios-sideload-unsigned.ipa)
+          unzip -tq build/ios/ipa/passcom-ios-sideload-unsigned.ipa
+          python3 tool/verify_app_identity.py --ipa build/ios/ipa/passcom-ios-sideload-unsigned.ipa
       - name: Upload sideload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: compass-ios-sideload-unsigned
-          path: build/ios/ipa/compass-ios-sideload-unsigned.ipa
+          name: passcom-ios-sideload-unsigned
+          path: build/ios/ipa/passcom-ios-sideload-unsigned.ipa
           if-no-files-found: error
           retention-days: 14

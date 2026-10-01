@@ -1,4 +1,6 @@
 import 'package:destination_compass/core/geo_point.dart';
+import 'package:destination_compass/core/network/network_monitor.dart';
+import 'package:destination_compass/map/kakao_map_state.dart';
 import 'package:destination_compass/map/map_mode_controller.dart';
 import 'package:destination_compass/offline/offline_map_controller.dart';
 import 'package:destination_compass/offline/offline_region.dart';
@@ -124,24 +126,24 @@ void main() {
     final downloads = OfflineMapController(repository: store, backend: backend);
     await downloads.start();
     await downloads.download(downloads.draft(center, 5));
-    final mode = MapModeController(naverConfigured: true,
+    final mode = MapModeController(kakaoConfigured: true,
       offlineMaps: downloads, switchDelay: const Duration(milliseconds: 1),
       recoveryDelay: const Duration(milliseconds: 1));
-    mode.update(connected: false, position: center);
+    mode.update(networkState: NetworkState.unavailable, position: center);
     await settle();
     expect(mode.mode, MapMode.offlineMapbox);
-    mode.update(connected: true);
+    mode.update(networkState: NetworkState.available);
     await settle();
-    expect(mode.mode, MapMode.onlineNaver);
-    mode.naverFailure();
+    expect(mode.mode, MapMode.onlineKakao);
+    mode.kakaoFailure();
     await settle();
     expect(mode.mode, MapMode.offlineMapbox);
     mode.update(position: const GeoPoint(38, 128));
     await settle();
     expect(mode.mode, MapMode.mapUnavailable);
-    mode.retryNaver();
+    mode.retryKakao();
     await settle();
-    expect(mode.mode, MapMode.onlineNaver);
+    expect(mode.mode, MapMode.onlineKakao);
     mode.dispose(); downloads.dispose();
   });
 
@@ -150,13 +152,72 @@ void main() {
       backend: _Backend());
     await downloads.start();
     await downloads.download(downloads.draft(center, 5));
-    final mode = MapModeController(naverConfigured: true,
+    final mode = MapModeController(kakaoConfigured: true,
       offlineMaps: downloads, switchDelay: const Duration(milliseconds: 40),
       recoveryDelay: const Duration(milliseconds: 40));
-    mode.update(connected: false, position: center);
-    mode.update(connected: true);
+    mode.update(networkState: NetworkState.unavailable, position: center);
+    mode.update(networkState: NetworkState.available);
     await Future<void>.delayed(const Duration(milliseconds: 55));
-    expect(mode.mode, MapMode.onlineNaver);
+    expect(mode.mode, MapMode.onlineKakao);
     mode.dispose(); downloads.dispose();
+  });
+
+  test('unknown allows Kakao; only explicit offline or SDK failure falls back', () async {
+    final maps = OfflineMapController(repository: _Store(), backend: _Backend());
+    await maps.start();
+    await maps.download(maps.draft(center, 5));
+    final mode = MapModeController(kakaoConfigured: true, offlineMaps: maps,
+      switchDelay: const Duration(milliseconds: 1),
+      recoveryDelay: const Duration(milliseconds: 1));
+    mode.update(networkState: NetworkState.unknown, position: center);
+    expect(mode.desired, MapMode.onlineKakao);
+    mode.kakaoFailure(KakaoFailure.authentication);
+    expect(mode.networkState, NetworkState.unknown);
+    expect(mode.kakaoState, KakaoState.failed);
+    await settle();
+    expect(mode.mode, MapMode.offlineMapbox);
+    mode.retryKakao();
+    await settle();
+    expect(mode.mode, MapMode.onlineKakao);
+    mode.kakaoFailure(KakaoFailure.timeout);
+    expect(mode.kakaoState, KakaoState.timedOut);
+    expect(mode.networkState, NetworkState.unknown);
+    await settle();
+    expect(mode.mode, MapMode.offlineMapbox);
+    mode.update(networkState: NetworkState.available);
+    await settle();
+    expect(mode.mode, MapMode.onlineKakao);
+    expect(mode.failure, isNull);
+    mode.dispose(); maps.dispose();
+  });
+
+  test('failure without coverage is not an offline network assertion', () async {
+    final maps = OfflineMapController(repository: _Store(), backend: null);
+    final mode = MapModeController(kakaoConfigured: true, offlineMaps: maps,
+      switchDelay: const Duration(milliseconds: 1));
+    mode.update(networkState: NetworkState.available);
+    mode.kakaoFailure(KakaoFailure.timeout);
+    await settle();
+    expect(mode.mode, MapMode.mapUnavailable);
+    expect(mode.networkState, NetworkState.available);
+    expect(mode.failure, KakaoFailure.timeout);
+    mode.dispose(); maps.dispose();
+  });
+
+  test('terminal auth failure never automatically retries on network recovery', () async {
+    final maps = OfflineMapController(repository: _Store(), backend: null);
+    final mode = MapModeController(kakaoConfigured: true, offlineMaps: maps,
+      switchDelay: const Duration(milliseconds: 1));
+    mode.kakaoFailure(KakaoFailure.authentication);
+    for (var i = 0; i < 5; i++) {
+      mode.update(networkState: NetworkState.unavailable);
+      mode.update(networkState: NetworkState.available);
+    }
+    expect(mode.failure, KakaoFailure.authentication);
+    expect(mode.attempt, 0);
+    mode.retryKakao(); // Explicit user retry remains available.
+    expect(mode.failure, isNull);
+    expect(mode.attempt, 1);
+    mode.dispose(); maps.dispose();
   });
 }

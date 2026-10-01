@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 
 root = Path(__file__).resolve().parents[1]
 app_id = 'com.ybaf100.compass'
+app_name = 'passcom'
 manifest = root / 'android/app/src/main/AndroidManifest.xml'
 android_ns = 'http://schemas.android.com/apk/res/android'
 ET.register_namespace('android', android_ns)
@@ -15,7 +16,7 @@ element = tree.getroot()
 application = element.find('application')
 if application is None:
     raise RuntimeError('Flutter Android application entry not found')
-application.set(f'{{{android_ns}}}label', '목적지 나침반')
+application.set(f'{{{android_ns}}}label', app_name)
 for permission in ('ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION',
                    'INTERNET', 'ACCESS_NETWORK_STATE'):
     name = f'android.permission.{permission}'
@@ -43,15 +44,13 @@ for path in (root / 'android/app/build.gradle.kts',
     gradle = gradle.replace('compileSdkVersion flutter.compileSdkVersion', 'compileSdkVersion 36')
     path.write_text(gradle)
 
-# Naver 1.4 applies the legacy Kotlin Gradle plugin while Mapbox 2.31 only
-# applies it when AGP is below 9. Pin a common AGP 8 toolchain until both
-# upstream plugins support AGP 9's built-in Kotlin together.
+# Keep the native bridge on a tested AGP/Kotlin pair alongside Mapbox.
 settings = root / 'android/settings.gradle.kts'
 if settings.exists():
     contents = settings.read_text()
     contents, count = re.subn(
         r'id\("com\.android\.application"\) version "[^"]+" apply false',
-        'id("com.android.application") version "8.11.1" apply false', contents)
+        'id("com.android.application") version "8.12.1" apply false', contents)
     if count != 1:
         raise RuntimeError('Flutter AGP version anchor not found')
     contents, count = re.subn(
@@ -71,7 +70,24 @@ if app_gradle.exists():
             raise RuntimeError('Flutter Android app plugin anchor not found')
         contents = contents.replace(anchor,
             anchor + '    id("org.jetbrains.kotlin.android")\n', 1)
+    dependency = 'implementation("com.kakao.maps.open:android:2.15.2")'
+    if dependency not in contents:
+        contents += '\ndependencies {\n    ' + dependency + '\n}\n'
+    test_dependency = 'testImplementation("junit:junit:4.13.2")'
+    if test_dependency not in contents:
+        contents += '\ndependencies {\n    ' + test_dependency + '\n}\n'
     app_gradle.write_text(contents)
+
+project_gradle = root / 'android/build.gradle.kts'
+if project_gradle.exists():
+    contents = project_gradle.read_text()
+    repository = 'maven(url = "https://devrepo.kakao.com/nexus/repository/kakaomap-releases/")'
+    if repository not in contents:
+        anchor = '    repositories {\n'
+        if anchor not in contents:
+            raise RuntimeError('Android repositories anchor not found')
+        contents = contents.replace(anchor, anchor + '        ' + repository + '\n', 1)
+    project_gradle.write_text(contents)
 
 wrapper = root / 'android/gradle/wrapper/gradle-wrapper.properties'
 if wrapper.exists():
@@ -96,7 +112,17 @@ with info.open('rb') as file:
     data = plistlib.load(file)
 data['NSLocationWhenInUseUsageDescription'] = (
     '현재 위치에서 목적지까지의 거리와 방향을 표시하는 데 위치 정보가 필요합니다.')
-data['CFBundleDisplayName'] = '목적지 나침반'
+data['CFBundleDisplayName'] = app_name
+data['CFBundleName'] = app_name
+data['UIApplicationSceneManifest'] = {
+    'UIApplicationSupportsMultipleScenes': False,
+    'UISceneConfigurations': {'UIWindowSceneSessionRoleApplication': [{
+        'UISceneClassName': 'UIWindowScene',
+        'UISceneDelegateClassName': 'FlutterSceneDelegate',
+        'UISceneConfigurationName': 'flutter',
+        'UISceneStoryboardFile': 'Main',
+    }]},
+}
 data['UISupportedInterfaceOrientations'] = [
     'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationLandscapeLeft',
     'UIInterfaceOrientationLandscapeRight']
@@ -124,7 +150,36 @@ if podfile.exists():
             "        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']\n"
             f"        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << '{flag}'\n"
             "      end\n    end")
+    kakao_pod = "  pod 'KakaoMapsSDK', '2.12.19'\n"
+    if kakao_pod not in pod:
+        anchor = '  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))'
+        if anchor not in pod:
+            raise RuntimeError('Flutter Runner pods anchor not found')
+        pod = pod.replace(anchor, kakao_pod + anchor, 1)
     podfile.write_text(pod)
+
+# Flutter's Swift-Package-first template no longer includes CocoaPods xcconfigs.
+# Kakao's official iOS distribution uses CocoaPods, while Mapbox remains SPM.
+for configuration in ('Debug', 'Release'):
+    xcconfig = root / f'ios/Flutter/{configuration}.xcconfig'
+    if not xcconfig.exists():
+        continue
+    contents = xcconfig.read_text()
+    pods_include = (f'#include? "Pods/Target Support Files/Pods-Runner/'
+                    f'Pods-Runner.{configuration.lower()}.xcconfig"')
+    if pods_include not in contents:
+        xcconfig.write_text(pods_include + '\n' + contents)
+
+# Keep one generated AppDelegate compilation unit, independent of Flutter's
+# Xcode group format. Bootstrap recopies the bridge before composing the policy.
+app_delegate = root / 'ios/Runner/AppDelegate.swift'
+policy = root / 'platform_overrides/ios/KakaoEngineLifecycle.swift'
+marker_geometry = root / 'platform_overrides/ios/KakaoMarkerGeometry.swift'
+heading_orientation = root / 'platform_overrides/ios/HeadingOrientation.swift'
+if app_delegate.exists():
+    bridge = (root / 'platform_overrides/ios/AppDelegate.swift').read_text()
+    app_delegate.write_text(bridge + '\n' + policy.read_text() + '\n' +
+                            marker_geometry.read_text() + '\n' + heading_orientation.read_text())
 
 project = root / 'ios/Runner.xcodeproj/project.pbxproj'
 if project.exists():

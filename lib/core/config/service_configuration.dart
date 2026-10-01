@@ -3,7 +3,7 @@ enum ConfigurationStatus { missing, invalid, configured }
 
 class ServiceConfiguration {
   const ServiceConfiguration({
-    required this.naverClientId,
+    required this.kakaoNativeAppKey,
     required this.supabaseUrl,
     required this.supabasePublishableKey,
     required this.mapboxAccessToken,
@@ -11,12 +11,12 @@ class ServiceConfiguration {
 
   static const appIdentifier = 'com.ybaf100.compass';
 
-  final String naverClientId;
+  final String kakaoNativeAppKey;
   final String supabaseUrl;
   final String supabasePublishableKey;
   final String mapboxAccessToken;
 
-  ConfigurationStatus get naverStatus => _nonEmptyId(naverClientId);
+  ConfigurationStatus get kakaoStatus => _nonEmptyId(kakaoNativeAppKey);
 
   ConfigurationStatus get supabaseStatus {
     if (supabaseUrl.trim().isEmpty && supabasePublishableKey.trim().isEmpty) {
@@ -41,7 +41,7 @@ class ServiceConfiguration {
         ? ConfigurationStatus.configured : ConfigurationStatus.invalid;
   }
 
-  bool get naverConfigured => naverStatus == ConfigurationStatus.configured;
+  bool get kakaoConfigured => kakaoStatus == ConfigurationStatus.configured;
   bool get supabaseConfigured => supabaseStatus == ConfigurationStatus.configured;
   bool get mapboxConfigured => mapboxStatus == ConfigurationStatus.configured;
 
