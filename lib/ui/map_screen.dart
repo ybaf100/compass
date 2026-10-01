@@ -301,7 +301,9 @@ class _MapScreenState extends State<MapScreen>
         // iOS owns its bounded prepare/499 retries. A Flutter load timer must
         // not destroy that native view at the first preparation deadline.
         if (_mode == MapMode.onlineKakao &&
-            widget.kakaoDiagnostics?.value.nativeTimeoutManaged == true) return;
+            widget.kakaoDiagnostics?.value.nativeTimeoutManaged == true) {
+          return;
+        }
         setState(() => _mapTimedOut = true);
         if (_mode == MapMode.onlineKakao) widget.mapError.value = KakaoFailure.timeout;
       }
