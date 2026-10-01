@@ -25,6 +25,12 @@ def verify_plist(data, compiled):
         require_equal(key, data.get(key), APP_NAME)
     expected_id = APP_ID if compiled else '$(PRODUCT_BUNDLE_IDENTIFIER)'
     require_equal('CFBundleIdentifier', data.get('CFBundleIdentifier'), expected_id)
+    if compiled:
+        for key in ('CFBundleIcons', 'CFBundleIcons~ipad'):
+            primary = data.get(key, {}).get('CFBundlePrimaryIcon', {})
+            require_equal(f'{key} icon name', primary.get('CFBundleIconName'), 'AppIcon')
+            if not primary.get('CFBundleIconFiles'):
+                raise SystemExit(f'{key} compiled app icons missing')
 
 
 def verify_sources():
@@ -44,6 +50,9 @@ def verify_sources():
     require_equal('Android application label',
                   application.get('{http://schemas.android.com/apk/res/android}label'),
                   APP_NAME)
+    require_equal('Android launcher icon',
+                  application.get('{http://schemas.android.com/apk/res/android}icon'),
+                  '@mipmap/ic_launcher')
 
     activity = ROOT / 'android/app/src/main/kotlin/com/ybaf100/compass/MainActivity.kt'
     if not activity.exists() or not re.search(r'^package com\.ybaf100\.compass$',

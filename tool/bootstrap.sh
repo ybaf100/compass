@@ -25,6 +25,7 @@ rm -f android/app/src/main/kotlin/com/example/destination_compass/MainActivity.k
 cp platform_overrides/ios/AppDelegate.swift ios/Runner/AppDelegate.swift
 cp platform_overrides/ios/Podfile ios/Podfile
 python3 tool/configure_platforms.py
+python3 tool/app_icons.py --apply
 python3 tool/verify_app_identity.py
 flutter pub get
 echo '플랫폼 설정 완료. SETUP.md의 Kakao Native app key 안내를 확인하세요.'

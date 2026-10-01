@@ -28,8 +28,10 @@ jobs:
         run: |
           bash tool/bootstrap.sh
           python3 tool/verify_app_identity.py
+          python3 tool/app_icons.py --verify-applied
       - run: flutter analyze
       - run: python3 tool/test_kakao_marker_contract.py
+      - run: python3 tool/test_release_tooling.py
       - run: flutter test
       - name: Test Android production marker geometry
         working-directory: android
@@ -74,6 +76,7 @@ jobs:
           cache: true
       - run: bash tool/bootstrap.sh
       - run: python3 tool/verify_app_identity.py
+      - run: python3 tool/app_icons.py --verify-applied
       - run: xcodebuild -version
       - name: Build iOS simulator app
         env:
@@ -99,12 +102,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Run iPad simulator native plugin lifecycle smoke test
-        timeout-minutes: 25
-        run: |
-          simulator_id=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; devices=[d for group in json.load(sys.stdin)["devices"].values() for d in group if "iPad" in d["name"]]; print(devices[0]["udid"])')
-          xcrun simctl boot "$simulator_id"
-          xcrun simctl bootstatus "$simulator_id" -b
-          flutter test integration_test/plugin_registration_test.dart -d "$simulator_id"
+        timeout-minutes: 35
+        run: python3 tool/run_ipad_smoke_test.py
 
   ios-sideload:
     runs-on: macos-latest
@@ -116,6 +115,7 @@ jobs:
           cache: true
       - run: bash tool/bootstrap.sh
       - run: python3 tool/verify_app_identity.py
+      - run: python3 tool/app_icons.py --verify-applied
       - name: Build unsigned iOS device app
         env:
           KAKAO_NATIVE_APP_KEY: ${{ vars.KAKAO_NATIVE_APP_KEY }}

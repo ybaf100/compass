@@ -11,6 +11,8 @@ passcom은 지도에서 목적지를 지정하고 기기의 방향을 기준으�
 
 홈 화면 앱 이름과 앱 내 브랜드명은 모두 `passcom`입니다. Android applicationId/namespace와 iOS/iPadOS Bundle ID는 `com.ybaf100.compass`, 내부 Flutter 프로젝트명은 `destination_compass`를 유지합니다. 부트스트랩을 다시 실행해도 이름과 식별자는 동일합니다.
 
+앱 아이콘은 제공된 우주·나침반 이미지입니다. iPhone/iPad AppIcon과 Android density별/Adaptive launcher 리소스를 `platform_overrides/icons`에 보관하고 bootstrap마다 적용합니다. `python3 tool/app_icons.py --verify-applied`로 적용 누락을 검사합니다. 원본 디자인을 바꾸지 않고 플랫폼별 크기로 축소하며, 아이콘 재생성만 Pillow가 필요합니다 (`python3 tool/app_icons.py --source 이미지경로`). 일반 bootstrap/CI에는 추가 패키지가 필요하지 않습니다.
+
 **실제 서비스 연결과 실기기 빌드:** [SETUP.md](SETUP.md) — 앱 식별자, Kakao/Supabase/Mapbox 발급 순서, Android Key Hash, 로컬 설정 파일, GitHub Actions Variables, APK/IPA 다운로드, 기기 점검 및 문제 해결.
 
 ## 실행
@@ -102,6 +104,8 @@ Kakao 마커의 보이는 지름은 목적지 22, 친구/오래된 친구/Ping 1
 네트워크 상태는 `unknown / available / unavailable`입니다. 플러그인 조회·스트림 예외와 빈 결과는 unknown이며, 명시적 `none`만 unavailable로 처리합니다. unknown도 Kakao 지도 로드를 시도합니다. Wi-Fi 복구와 앱 resume에서 상태를 재조회하고, 초기/복귀 조회는 필요할 때 0.5초·1.5초 뒤 최대 두 번 재확인합니다. 최신 스트림 이벤트는 오래된 비동기 조회 결과보다 우선합니다. Kakao 인증/초기화 실패와 18초 로드 timeout은 별도 상태이며, 기존 오프라인 전환 지연과 카메라 보존을 유지합니다.
 
 iOS는 UIScene의 `didInitializeImplicitFlutterEngine`에서 플러그인·Heading 채널·Kakao PlatformView를 등록합니다. CI는 iPad 시뮬레이터에서 connectivity, 위치 권한 조회, SharedPreferences, Heading 채널, Kakao PlatformView의 실제 등록까지 확인합니다. 위치 권한 허용 후 첫 GPS fix가 15초 늦어져도 스트림을 끊지 않고 탐색/재시도 상태를 유지합니다. 서비스 상태는 네트워크·SDK·위치 오류를 분리하고 키/좌표/개인 식별자를 표시하지 않습니다.
+
+iPad smoke CI는 verbose 출력과 12분 launch 제한을 사용합니다. 테스트가 시작되기 전에 simulator/VM-service 연결이 멈춘 경우에만 선택한 시뮬레이터를 다시 시작해 한 번 재시도합니다. assertion/plugin 실패는 재시도로 숨기지 않으며, 실제 기기 인증/지도 로드를 검증하는 테스트는 아닙니다.
 
 ## 검증
 
