@@ -99,7 +99,7 @@ iOS는 UIScene의 `didInitializeImplicitFlutterEngine`에서 플러그인·Headi
 
 ## 검증
 
-Kakao iOS는 인증 성공·foreground·유효한 container 크기 이후에만 engine을 활성화합니다. 서비스 상태에서 native lifecycle 단계, 400/401/403/429/499 인증 코드, 키 존재 여부와 실제 설치 Bundle ID의 일치 여부를 확인할 수 있습니다. 499 자동 재시도는 두 번으로 제한하며, 종료된 인증 오류는 네트워크/앱 복귀로 반복하지 않습니다. CI는 production의 SDK-independent Swift 정책도 별도로 테스트합니다.
+Kakao iOS는 SDK prepared 상태 또는 인증 성공, foreground, 유효한 container 크기를 확인해 engine을 활성화합니다. `prepareEngine()` 반환 Bool은 진단 값이며 `false`만으로 실패하지 않습니다. 서비스 상태에서 실제 engine prepared/active, prepare return, auth callback, lifecycle 단계, 인증 코드와 설치 Bundle ID를 확인할 수 있습니다. 실제 499와 진행 없는 prepare timeout만 공통 예산으로 최대 두 번 자동 재시도하며, 종료된 인증 오류는 네트워크/앱 복귀로 반복하지 않습니다. CI는 production의 SDK-independent Swift 정책도 별도로 테스트합니다.
 
 같은 브랜치에서 새 CI가 시작되면 이전 실행은 자동 취소됩니다. push와 PR 이벤트를 같은 concurrency 그룹으로 묶고, 다른 브랜치/포크의 실행은 독립적으로 유지합니다.
 

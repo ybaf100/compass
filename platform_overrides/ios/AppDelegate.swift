@@ -88,6 +88,8 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
   private var disposed = false
   private var failureCategory = "initialization"
   private var authRetry: DispatchWorkItem?
+  private var engineWatch: [DispatchWorkItem] = []
+  private var stateDescriptionAvailable: Bool?
   private var foregroundObserver: NSObjectProtocol?
   private var backgroundObserver: NSObjectProtocol?
 
@@ -133,6 +135,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
       self.lifecycle.setForeground(true)
       self.scheduleAuthRetry()
       self.activateIfAllowed()
+      self.watchEngineIfNeeded()
     }
     backgroundObserver = NotificationCenter.default.addObserver(
       forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
@@ -140,7 +143,9 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
       self.lifecycle.setForeground(false)
       self.authRetry?.cancel()
       self.authRetry = nil
+      self.cancelEngineWatch()
       self.controller?.pauseEngine()
+      self.observeEngineState()
     }
     prepareEngine()
   }
@@ -150,6 +155,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
   deinit {
     disposed = true
     authRetry?.cancel()
+    cancelEngineWatch()
     host.onLayout = nil
     lifecycle.onStage = nil
     if let foregroundObserver { NotificationCenter.default.removeObserver(foregroundObserver) }
@@ -172,6 +178,13 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
      "authErrorCode": lifecycle.authErrorCode.map { $0 as Any } ?? NSNull(),
      "retryCount": lifecycle.retryCount,
      "retryPending": lifecycle.retryDelay != nil,
+     "prepareReturn": lifecycle.prepareReturn.map { $0 as Any } ?? NSNull(),
+     "enginePrepared": controller.map { $0.isEnginePrepared as Any } ?? NSNull(),
+     "engineActive": controller.map { $0.isEngineActive as Any } ?? NSNull(),
+     "authCallback": lifecycle.authCallback.rawValue,
+     "engineStateSummary": lifecycle.engineStateSummary,
+     "stateDescriptionAvailable": stateDescriptionAvailable.map { $0 as Any } ?? NSNull(),
+     "nativeTimeoutManaged": true,
      "containerWidth": Double(lifecycle.bounds.size.width),
      "containerHeight": Double(lifecycle.bounds.size.height)]
   }
@@ -190,18 +203,64 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
   }
 
   private func prepareEngine() {
-    guard !disposed else { return }
+    guard !disposed, let controller else { return }
+    cancelEngineWatch()
     lifecycle.prepareRequested()
-    if controller?.prepareEngine() == false {
-      failureCategory = "initialization"
-      lifecycle.fail()
-      emitFailure()
+    // The official API does not define false as fatal. Delegates and SDK state
+    // are authoritative; keep the raw return for diagnostics only.
+    lifecycle.prepareReturned(controller.prepareEngine())
+    activateIfAllowed()
+    emitDiagnostics()
+    watchEngineIfNeeded()
+  }
+
+  private func observeEngineState() {
+    guard let controller else { return }
+    lifecycle.observeEngine(prepared: controller.isEnginePrepared,
+      active: controller.isEngineActive)
+    #if DEBUG
+    // Opaque SDK text may contain sensitive data. Never store, forward or log
+    // it. Only a fixed summary and presence boolean survive sanitization.
+    let safe = lifecycle.sanitizedStateDescription(controller.getStateDescMessage())
+    stateDescriptionAvailable = safe.available
+    #endif
+  }
+
+  private func cancelEngineWatch() {
+    engineWatch.forEach { $0.cancel() }
+    engineWatch.removeAll()
+  }
+
+  private func watchEngineIfNeeded() {
+    guard !disposed, lifecycle.foreground, !lifecycle.loaded,
+      !lifecycle.failed, engineWatch.isEmpty else { return }
+    // Bounded state snapshots, not indefinite polling. Handles prepared state
+    // without an auth callback, as permitted by the official drawing samples.
+    let delays: [TimeInterval] = [0.5, 1.5, 3, 6, 12, KakaoEngineLifecycle.timeoutSeconds]
+    for delay in delays {
+      let work = DispatchWorkItem { [weak self] in
+        guard let self, !self.disposed, self.lifecycle.foreground else { return }
+        self.activateIfAllowed()
+        self.emitDiagnostics()
+        if let reason = self.lifecycle.deadlineReached(elapsed: delay) {
+          self.failureCategory = reason.rawValue
+          self.cancelEngineWatch()
+          if self.lifecycle.terminalFailure { self.emitFailure() }
+          else { self.scheduleAuthRetry() }
+        }
+      }
+      engineWatch.append(work)
+      DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
   }
 
   private func activateIfAllowed() {
     guard !disposed else { return }
-    if lifecycle.requestActivation() { controller?.activateEngine() }
+    observeEngineState()
+    if lifecycle.requestActivation() {
+      controller?.activateEngine()
+      observeEngineState()
+    }
     addViewIfAllowed()
     announceLoadedIfAllowed()
   }
@@ -229,6 +288,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
 
   private func announceLoadedIfAllowed() {
     if lifecycle.markLoaded() {
+      cancelEngineWatch()
       var payload = diagnostics()
       payload["type"] = "loaded"
       event(payload)
@@ -238,6 +298,7 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
   private func handle(_ call: FlutterMethodCall, result: FlutterResult) {
     switch call.method {
     case "status":
+      activateIfAllowed()
       var status = diagnostics()
       status["type"] = lifecycle.terminalFailure ? "failed" : lifecycle.loaded ? "loaded" : "initializing"
       status["category"] = failureCategory
@@ -271,12 +332,14 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
     authRetry?.cancel()
     authRetry = nil
     failureCategory = "authentication"
+    cancelEngineWatch()
     // Do not forward/log desc: it can contain credentials or request details.
     map = nil
     layer = nil
     pois.removeAll()
     kinds.removeAll()
     lifecycle.authenticationFailed(errorCode)
+    observeEngineState()
     #if DEBUG
     print("[passcom] kakao.authErrorCode: \(errorCode)")
     #endif
@@ -285,7 +348,8 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
   }
 
   func addViews() {
-    guard !disposed else { return }
+    guard !disposed, !lifecycle.failed else { return }
+    observeEngineState()
     lifecycle.addViews()
     addViewIfAllowed()
   }
@@ -298,9 +362,10 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
   }
 
   func addViewSucceeded(_ viewName: String, viewInfoName: String) {
-    guard !disposed else { return }
+    guard !disposed, !lifecycle.failed else { return }
     guard let kakaoMap = controller?.getView(viewName) as? KakaoMap else {
       failureCategory = "addView"
+      cancelEngineWatch()
       lifecycle.fail()
       emitFailure()
       return
@@ -332,12 +397,14 @@ private final class KakaoMapPlatformView: NSObject, FlutterPlatformView,
     if let pendingCamera { applyCamera(pendingCamera) }
     emitCamera()
     lifecycle.addViewSucceeded(currentBounds: container.bounds)
+    observeEngineState()
     announceLoadedIfAllowed()
   }
 
   func addViewFailed(_ viewName: String, viewInfoName: String) {
     guard !disposed else { return }
     failureCategory = "addView"
+    cancelEngineWatch()
     lifecycle.fail()
     emitFailure()
   }

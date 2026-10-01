@@ -66,7 +66,8 @@ class MapModeController extends ChangeNotifier {
   void kakaoFailure([KakaoFailure reason = KakaoFailure.initialization]) {
     if (_disposed || failure == reason) return;
     failure = reason;
-    kakaoState = reason == KakaoFailure.timeout ? KakaoState.timedOut : KakaoState.failed;
+    kakaoState = reason == KakaoFailure.timeout || reason == KakaoFailure.prepareTimeout
+        ? KakaoState.timedOut : KakaoState.failed;
     diagnosticEvent('kakao.failure', reason.name);
     _reevaluate();
     notifyListeners();

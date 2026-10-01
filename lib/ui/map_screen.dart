@@ -298,6 +298,10 @@ class _MapScreenState extends State<MapScreen>
     final generation = _mapGeneration;
     _mapTimeout = Timer(const Duration(seconds: 18), () {
       if (mounted && generation == _mapGeneration && !_mapLoaded) {
+        // iOS owns its bounded prepare/499 retries. A Flutter load timer must
+        // not destroy that native view at the first preparation deadline.
+        if (_mode == MapMode.onlineKakao &&
+            widget.kakaoDiagnostics?.value.nativeTimeoutManaged == true) return;
         setState(() => _mapTimedOut = true);
         if (_mode == MapMode.onlineKakao) widget.mapError.value = KakaoFailure.timeout;
       }
@@ -535,8 +539,11 @@ class _MapScreenState extends State<MapScreen>
     ]);
   }
 
-  static String _failureMessage(KakaoFailure reason) => reason == KakaoFailure.timeout
-      ? '카카오 지도 응답이 없습니다.' : '카카오 지도 연결에 실패했습니다.';
+  static String _failureMessage(KakaoFailure reason) => switch (reason) {
+    KakaoFailure.prepareTimeout => '카카오 지도 준비 응답이 없습니다.',
+    KakaoFailure.timeout => '카카오 지도 응답이 없습니다.',
+    _ => '카카오 지도 연결에 실패했습니다.',
+  };
 
   String get _unavailableMessage {
     final network = widget.mapMode?.networkState ?? widget.controller.networkState;
@@ -812,7 +819,8 @@ class _MapScreenState extends State<MapScreen>
         supabase: settings.supabaseStatus,
         mapbox: settings.mapboxStatus,
         network: widget.controller.networkStatus,
-        kakaoState: widget.mapMode?.kakaoState ?? (widget.mapError.value == KakaoFailure.timeout
+        kakaoState: widget.mapMode?.kakaoState ?? (widget.mapError.value == KakaoFailure.timeout ||
+            widget.mapError.value == KakaoFailure.prepareTimeout
             ? KakaoState.timedOut : widget.mapError.value != null ? KakaoState.failed
                 : _mapLoaded ? KakaoState.loaded : KakaoState.initializing),
         kakaoFailure: widget.mapMode?.failure ?? widget.mapError.value,

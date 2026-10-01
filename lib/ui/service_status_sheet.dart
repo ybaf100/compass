@@ -58,18 +58,34 @@ class ServiceStatusSheet extends StatelessWidget {
               KakaoState.initializing => '초기화 중 · 지도 연결 확인 필요',
               KakaoState.loaded => '지도 로드 성공',
               KakaoState.failed => '인증/초기화 실패 · ${kakaoFailure?.name ?? 'initialization'}',
-              KakaoState.timedOut => 'timeout · 카카오 지도 응답 없음',
+              KakaoState.timedOut => kakaoFailure == KakaoFailure.prepareTimeout
+                  ? 'prepare timeout · 카카오 지도 준비 응답 없음'
+                  : 'timeout · 카카오 지도 응답 없음',
             }),
           ListTile(title: const Text('Kakao Native app key'),
             subtitle: Text(kakaoDiagnostics.keyPresent ? 'key present' : 'key missing')),
           ListTile(title: const Text('Kakao SDK'),
             subtitle: Text(kakaoDiagnostics.sdkInitialized
                 ? 'SDK initialized' : 'SDK not initialized')),
+          ListTile(title: const Text('prepareEngine return'),
+            subtitle: Text(kakaoDiagnostics.prepareReturn?.toString() ?? '아직 호출되지 않음')),
+          ListTile(title: const Text('Engine prepared'),
+            subtitle: Text(_yesNo(kakaoDiagnostics.enginePrepared))),
+          ListTile(title: const Text('Engine active'),
+            subtitle: Text(_yesNo(kakaoDiagnostics.engineActive))),
+          ListTile(title: const Text('Auth callback status'),
+            subtitle: Text(kakaoDiagnostics.authCallback.name)),
+          ListTile(title: const Text('Engine state summary'),
+            subtitle: Text(kakaoDiagnostics.engineStateSummary?.name ?? '확인 중')),
+          ListTile(title: const Text('SDK state description'),
+            subtitle: Text(kakaoDiagnostics.stateDescriptionAvailable == null
+                ? 'debug 빌드에서 확인 · 원문 비공개'
+                : '${_yesNo(kakaoDiagnostics.stateDescriptionAvailable)} · 원문 비공개')),
           ListTile(title: const Text('Kakao lifecycle · 마지막 stage'),
             subtitle: Text(kakaoDiagnostics.stage?.name ?? '아직 생성되지 않음')),
           ListTile(title: const Text('Kakao 인증 오류'),
             subtitle: Text(kakaoDiagnostics.authErrorLabel)),
-          ListTile(title: const Text('인증 자동 재시도'),
+          ListTile(title: const Text('인증/엔진 자동 재시도'),
             subtitle: Text('${kakaoDiagnostics.retryCount}/2 · '
               '${kakaoDiagnostics.retryPending ? '대기 중' : '대기 없음'}')),
           ListTile(title: const Text('Kakao container size'),
@@ -107,6 +123,8 @@ class ServiceStatusSheet extends StatelessWidget {
     InitializationState.initialized => '초기화 완료 · 서비스 연결은 별도 확인',
     InitializationState.failed => '초기화 실패 · ${result.failure?.name ?? 'unexpected'}',
   };
+
+  static String _yesNo(bool? value) => value == null ? '확인 중' : value ? 'yes' : 'no';
 
   Widget _entry(String name, ConfigurationStatus status, {String? issue}) {
     final label = switch (status) {

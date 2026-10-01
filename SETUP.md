@@ -86,8 +86,10 @@ flutter run --dart-define-from-file=config/defines.local.json
 - **Network 확인 중 / 상태 확인 실패**: unknown 상태입니다. Kakao 로드는 계속 시도하며 플러그인 실패를 오프라인으로 확정하지 않습니다.
 - **Network 연결 없음**: 플러그인이 명시적 `none`을 보고했습니다. Wi-Fi OFF→ON 또는 앱 foreground 복귀 시 재조회합니다. 초기/복귀 조회는 0.5초·1.5초 뒤 최대 두 번 재시도합니다.
 - **Kakao 인증/초기화 실패 / timeout**: Network와 별도 문제입니다. Native app key·플랫폼 등록을 확인하고 온라인 재시도를 누르세요.
-- **Kakao lifecycle**: `platformViewCreated → sdkInitialized → enginePrepared → authenticating → authenticated → engineActivated → addViewsRequested → addViewSucceeded → loaded`의 마지막 native 단계와 container size를 표시합니다. 인증 성공·foreground·양수 크기 조건에서만 활성화합니다. `SDK initialized`는 키 전달/초기화 호출 완료이며 서버 인증 성공을 의미하지 않습니다.
-- **Kakao 인증 코드**: `400` 요청 파라미터, `401` 인증 자격 증명, `403` 권한, `429` 할당량, `499` 인증 서버 통신 실패입니다. 499만 0.5초·1.5초 후 최대 두 번 자동 재시도합니다. 종료된 인증 실패는 Wi-Fi/foreground 변화로 자동 반복하지 않으며 사용자가 재시도할 수 있습니다. 원문 `desc`는 수집하거나 표시하지 않습니다.
+- **Kakao lifecycle**: `enginePrepareRequested`는 호출 요청이고 `enginePrepared`/`engineActivated`는 SDK에서 관측한 상태입니다. prepared 상태 또는 인증 성공이 있으면 foreground·양수 크기에서 활성화합니다. 공식 지도 그리기 예제처럼 인증 성공 콜백이 오지 않더라도 실제 prepared 상태에서 진행할 수 있습니다. `addViews → addViewSucceeded → loaded`는 실제 delegate로 처리합니다. `SDK initialized`는 초기화 호출 완료이며 서버 인증 성공을 의미하지 않습니다.
+- **prepareEngine return / Engine prepared / Engine active / Auth callback status**: 반환 Bool은 진단 값이고 `false`는 즉시 실패가 아닙니다. prepared/active는 `KMController.isEnginePrepared/isEngineActive` 실제 값입니다. auth callback은 `none/succeeded/failed`로 구분합니다. `getStateDescMessage()`의 데이터 형식과 민감정보 제외가 공식 문서에서 보장되지 않아 debug 빌드에서 원문을 일시적으로 읽고 존재 여부만 남깁니다. UI에는 boolean에서 만든 고정 summary만 표시하며 원문을 저장·전달·로그하지 않습니다.
+- **Kakao timeout**: foreground 18초 동안 prepared/active 상태, 인증/addViews 콜백 진행이 없으면 `prepare timeout`입니다. 준비 또는 관련 콜백 진행 후 지도 생성이 완료되지 않으면 일반 지도 timeout으로 구분합니다. SDK 상태 확인은 준비 시도당 0.5/1.5/3/6/12/18초의 유한 snapshot만 사용합니다. native가 timeout과 재시도를 담당하는 iOS 뷰를 Flutter 18초 타이머가 중간에 종료하지 않습니다. background에서는 감시를 취소하고 foreground에서 다시 시작합니다.
+- **Kakao 인증 코드/재시도**: `400` 요청 파라미터, `401` 인증 자격 증명, `403` 권한, `429` 할당량, `499` 인증 서버 통신 실패입니다. 실제 499와 recoverable prepare timeout만 0.5초·1.5초 지연의 공통 최대 두 번 예산으로 자동 재시도합니다. Bool false는 예산을 소비하지 않습니다. 종료된 인증 실패는 Wi-Fi/foreground 변화로 자동 반복하지 않으며 사용자가 재시도할 수 있습니다. 원문 `desc`는 수집하거나 표시하지 않습니다.
 - **Expected / Runtime Bundle ID / Match**: Runtime 값은 설치된 앱의 `Bundle.main.bundleIdentifier`를 읽습니다. `no`이면 재서명된 실제 ID를 Kakao Developers의 플랫폼 등록과 대조하세요. 상수 Expected 값은 런타임 ID를 대신하지 않습니다. 키는 `key present / key missing`으로만 표시합니다.
 - **Location 탐색 중**: 첫 fix가 15초를 넘겨도 탐색을 유지합니다. Wi-Fi 전용 iPad의 위치 수신과 정확도는 기기/환경 영향을 받으므로 실제 수신을 확인하세요. 실제 stream/권한/서비스/플러그인 오류는 별도로 표시합니다.
 - **Supabase 초기화 실패**: `plugin / storage / network / timeout / authentication / configuration / unexpected` 분류를 확인합니다. 원문 예외·자격 증명은 표시하지 않습니다.
@@ -102,7 +104,7 @@ swiftc -parse-as-library platform_overrides/ios/KakaoEngineLifecycle.swift tool/
 /tmp/passcom-kakao-lifecycle-tests
 ```
 
-공식 [iOS 인증](https://apis.map.kakao.com/ios_v2/docs/getting-started/basics/02_auth/), [View Controls](https://apis.map.kakao.com/ios_v2/docs/getting-started/basics/01_view/) 흐름을 따릅니다. `addViewSucceeded`에서 현재 container bounds를 다시 적용하며, 첫 UIKit 레이아웃이 0×0일 때는 양수 크기를 기다립니다.
+공식 [KMController reference](https://apis.map.kakao.com/ios_v2/references/Classes/KMController.html), [지도 그리기 예제](https://apis.map.kakao.com/ios_v2/docs/getting-started/basics/04_drawmap/), [iOS 인증](https://apis.map.kakao.com/ios_v2/docs/getting-started/basics/02_auth/), [View Controls](https://apis.map.kakao.com/ios_v2/docs/getting-started/basics/01_view/) 흐름을 따릅니다. `prepareEngine() -> Bool`의 false를 fatal failure로 정의한 설명은 없으므로 이를 실패 판정으로 사용하지 않습니다. `addViewSucceeded`에서 현재 container bounds를 다시 적용하며, 첫 UIKit 레이아웃이 0×0일 때는 양수 크기를 기다립니다. Bundle ID의 Match는 영구 Expected ID와 비교한 값이며 Kakao Developers 등록을 조회한 결과는 아닙니다. 재서명된 Runtime ID를 등록했다면 Match가 no여도 그 자체로 인증 실패를 뜻하지 않습니다.
 
 ## 7. GitHub Actions Variables
 
@@ -158,4 +160,4 @@ python3 tool/verify_app_identity.py --ipa build/ios/ipa/passcom-ios-sideload-uns
 | Mapbox 지도 없음 | `pk.` public token과 `styles:read`/`fonts:read` scope, 온라인에서 유효한 지역 다운로드, 현재 GPS가 해당 지역 안에 있는지 확인 |
 | 지도 실패 중 나침반 | GPS 권한과 heading 센서, 저장된 목적지를 확인. 지도 서비스 설정과 별개로 Compass가 작동하도록 구성됨 |
 
-서비스 상태 화면은 원문 자격 증명을 표시하지 않으며 형식 검사만 합니다. 실제 사용 가능 여부는 기기에서 지도 로딩, 방 연결, 지역 다운로드로 검증해야 합니다.
+서비스 상태 화면은 자격 증명 원문을 표시하지 않으며 설정 형식과 native engine/인증/로드 상태를 구분합니다. 실제 사용 가능 여부는 기기에서 지도 로딩, 방 연결, 지역 다운로드로 검증해야 합니다.

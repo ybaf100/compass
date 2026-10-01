@@ -96,6 +96,8 @@ class KakaoMapProvider implements MapProvider, CameraAwareMapProvider {
             'authentication' => KakaoFailure.authentication,
             'addView' => KakaoFailure.addView,
             'bridge' => KakaoFailure.bridge,
+            'prepareTimeout' => KakaoFailure.prepareTimeout,
+            'timeout' => KakaoFailure.timeout,
             _ => KakaoFailure.initialization,
           };
           diagnosticEvent('kakao.nativeFailure', reason.name);

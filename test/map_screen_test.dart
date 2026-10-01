@@ -9,6 +9,7 @@ import 'package:destination_compass/destination/destination_store.dart';
 import 'package:destination_compass/map/map_provider.dart';
 import 'package:destination_compass/map/map_mode_controller.dart';
 import 'package:destination_compass/map/kakao_map_state.dart';
+import 'package:destination_compass/map/kakao_diagnostics.dart';
 import 'package:destination_compass/offline/offline_map_controller.dart';
 import 'package:destination_compass/offline/offline_region.dart';
 import 'package:destination_compass/offline/offline_region_repository.dart';
@@ -317,6 +318,34 @@ void main() {
     expect(error.value, isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose(); mode.dispose(); maps.dispose(); error.dispose();
+  });
+
+  testWidgets('native prepare retry deadline is not preempted by Flutter timeout', (tester) async {
+    final controller = DestinationController(locationProvider: _Location(),
+      headingProvider: _Heading(), networkMonitor: _Network(), store: _Store());
+    final maps = OfflineMapController(repository: _Regions(), backend: null);
+    final mode = MapModeController(kakaoConfigured: true, offlineMaps: maps,
+      switchDelay: const Duration(milliseconds: 1));
+    final map = _Map()..emitLoaded = false;
+    final error = ValueNotifier<KakaoFailure?>(null);
+    final diagnostics = ValueNotifier(const KakaoDiagnostics(
+      nativeTimeoutManaged: true, prepareReturn: false, enginePrepared: false,
+      engineActive: false, stage: KakaoStage.authenticating));
+    await tester.pumpWidget(MaterialApp(home: MapScreen(controller: controller,
+      mapProvider: map, offlineMaps: maps, mapMode: mode,
+      mapConfigured: true, mapError: error, kakaoDiagnostics: diagnostics)));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 19));
+    expect(error.value, isNull);
+    expect(map.resets, 0);
+    expect(mode.mode, MapMode.onlineKakao);
+    error.value = KakaoFailure.prepareTimeout; // Native budget exhausted.
+    await tester.pump(const Duration(milliseconds: 10)); await tester.pump();
+    expect(mode.kakaoState, KakaoState.timedOut);
+    expect(find.text('카카오 지도 준비 응답이 없습니다.'), findsOneWidget);
+    expect(find.byType(CompassPanel), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose(); mode.dispose(); maps.dispose(); error.dispose(); diagnostics.dispose();
   });
 
   testWidgets('Kakao auth failure with available network reports SDK failure', (tester) async {

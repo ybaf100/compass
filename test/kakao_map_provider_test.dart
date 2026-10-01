@@ -48,7 +48,8 @@ void main() {
       onNamedPlacePicked: (_, _) {}, onLoaded: () {}, onGesture: () {});
     await provider.refreshRuntimeIdentity();
     expect(provider.diagnostics.value.matchesBundleId('com.ybaf100.compass'), isTrue);
-    for (final stage in KakaoStage.values.where((s) => s != KakaoStage.failed)) {
+    for (final stage in KakaoStage.values.where((s) =>
+        s != KakaoStage.failed && s != KakaoStage.prepareTimedOut && s != KakaoStage.timedOut)) {
       bridge.emit({'type': stage == KakaoStage.loaded ? 'loaded' : 'diagnostics',
         'stage': stage.name, 'keyPresent': true, 'sdkInitialized': true});
       expect(provider.diagnostics.value.stage, stage);
@@ -91,6 +92,61 @@ void main() {
       'stage': 'failed', 'authErrorCode': 499, 'retryCount': 2, 'retryPending': false});
     expect(failure, KakaoFailure.authentication);
     provider.dispose();
+  });
+
+  for (final authArrived in [false, true]) {
+    test('false prepare return with ${authArrived ? 'auth success' : 'SDK prepared'} continues loading', () {
+      final bridge = FakeKakaoBridge();
+      KakaoFailure? failure;
+      var loaded = 0;
+      final provider = KakaoMapProvider(appKey: 'test', bridge: bridge,
+        onFailure: (value) => failure = value);
+      provider.buildMap(bottomPadding: 0, onPicked: (_) {},
+        onNamedPlacePicked: (_, _) {}, onLoaded: () => loaded++, onGesture: () {});
+      bridge.emit({'type': 'diagnostics', 'stage': 'authenticating',
+        'prepareReturn': false, 'enginePrepared': false, 'engineActive': false,
+        'authCallback': 'none', 'nativeTimeoutManaged': true});
+      expect(failure, isNull);
+      expect(provider.diagnostics.value.prepareReturn, isFalse);
+      expect(provider.diagnostics.value.engineActive, isFalse);
+      bridge.emit({'type': 'loaded', 'stage': 'loaded', 'enginePrepared': true,
+        'engineActive': true, 'authCallback': authArrived ? 'succeeded' : 'none'});
+      expect(loaded, 1);
+      expect(failure, isNull);
+      expect(provider.diagnostics.value.enginePrepared, isTrue);
+      expect(provider.diagnostics.value.engineActive, isTrue);
+      provider.dispose();
+    });
+  }
+
+  test('prepare timeout and rendering timeout are distinct native failures', () {
+    final bridge = FakeKakaoBridge();
+    KakaoFailure? failure;
+    final provider = KakaoMapProvider(appKey: 'test', bridge: bridge,
+      onFailure: (value) => failure = value);
+    provider.buildMap(bottomPadding: 0, onPicked: (_) {},
+      onNamedPlacePicked: (_, _) {}, onLoaded: () {}, onGesture: () {});
+    bridge.emit({'type': 'diagnostics', 'stage': 'prepareTimedOut',
+      'prepareReturn': false, 'retryPending': true, 'retryCount': 1});
+    expect(failure, isNull); // Recoverable preparation deadline stays native.
+    bridge.emit({'type': 'failed', 'stage': 'prepareTimedOut', 'category': 'prepareTimeout'});
+    expect(failure, KakaoFailure.prepareTimeout);
+    bridge.emit({'type': 'failed', 'stage': 'timedOut', 'category': 'timeout'});
+    expect(failure, KakaoFailure.timeout);
+    provider.dispose();
+  });
+
+  test('engine diagnostics whitelist opaque state descriptions and retain snapshots', () {
+    final value = const KakaoDiagnostics().apply({'prepareReturn': false,
+      'enginePrepared': true, 'engineActive': false, 'authCallback': 'none',
+      'engineStateSummary': 'prepared', 'stateDescriptionAvailable': true,
+      'stateDescription': 'secret-key location=37.5,127.0'});
+    expect(value.engineStateSummary, KakaoEngineSummary.prepared);
+    expect(value.withRuntimeBundleId('com.example').enginePrepared, isTrue);
+    expect(value.withRuntimeBundleId('com.example').prepareReturn, isFalse);
+    expect(value.apply({'prepareReturn': null}).prepareReturn, isNull);
+    expect(value.apply({'engineStateSummary': 'secret-key'}).engineStateSummary,
+      KakaoEngineSummary.prepared);
   });
 
   test('native ready/failure, tap, member tap and gesture events', () async {

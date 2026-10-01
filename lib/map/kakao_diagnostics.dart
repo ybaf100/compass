@@ -1,8 +1,10 @@
 enum KakaoStage {
-  platformViewCreated, sdkInitialized, enginePrepared, authenticating,
-  authenticated, engineActivated, addViewsRequested, addViewSucceeded,
-  loaded, failed,
+  platformViewCreated, sdkInitialized, enginePrepareRequested, authenticating,
+  enginePrepared, authenticated, engineActivationRequested, engineActivated,
+  addViewsRequested, addViewSucceeded, loaded, prepareTimedOut, timedOut, failed,
 }
+enum KakaoAuthCallback { none, succeeded, failed }
+enum KakaoEngineSummary { notCreated, preparing, prepared, active, recovering, failed }
 
 /// Whitelisted native diagnostics only. Raw keys and SDK descriptions are never
 /// retained, even if an unexpected field arrives over the platform channel.
@@ -10,7 +12,10 @@ class KakaoDiagnostics {
   const KakaoDiagnostics({this.stage, this.stages = const [],
     this.keyPresent = false, this.sdkInitialized = false,
     this.runtimeBundleId, this.authErrorCode, this.retryCount = 0,
-    this.retryPending = false, this.width, this.height});
+    this.retryPending = false, this.width, this.height,
+    this.prepareReturn, this.enginePrepared, this.engineActive,
+    this.authCallback = KakaoAuthCallback.none, this.engineStateSummary,
+    this.stateDescriptionAvailable, this.nativeTimeoutManaged = false});
 
   final KakaoStage? stage;
   final List<KakaoStage> stages;
@@ -22,6 +27,13 @@ class KakaoDiagnostics {
   final bool retryPending;
   final double? width;
   final double? height;
+  final bool? prepareReturn;
+  final bool? enginePrepared;
+  final bool? engineActive;
+  final KakaoAuthCallback authCallback;
+  final KakaoEngineSummary? engineStateSummary;
+  final bool? stateDescriptionAvailable;
+  final bool nativeTimeoutManaged;
 
   bool? matchesBundleId(String expected) => runtimeBundleId == null
       ? null : runtimeBundleId == expected;
@@ -40,7 +52,12 @@ class KakaoDiagnostics {
     stage: stage, stages: stages, keyPresent: keyPresent,
     sdkInitialized: sdkInitialized, runtimeBundleId: id,
     authErrorCode: authErrorCode, retryCount: retryCount,
-    retryPending: retryPending, width: width, height: height);
+    retryPending: retryPending, width: width, height: height,
+    prepareReturn: prepareReturn, enginePrepared: enginePrepared,
+    engineActive: engineActive, authCallback: authCallback,
+    engineStateSummary: engineStateSummary,
+    stateDescriptionAvailable: stateDescriptionAvailable,
+    nativeTimeoutManaged: nativeTimeoutManaged);
 
   KakaoDiagnostics apply(Map<String, dynamic> event) {
     KakaoStage? parseStage(dynamic raw) {
@@ -51,6 +68,14 @@ class KakaoDiagnostics {
     }
     final history = event['stages'];
     final id = event['runtimeBundleId'];
+    bool? boolean(String name, bool? current) => event.containsKey(name) && event[name] == null
+        ? null : event[name] is bool ? event[name] as bool : current;
+    T? enumeration<T extends Enum>(String name, List<T> values, T? current) {
+      for (final value in values) {
+        if (value.name == event[name]) return value;
+      }
+      return current;
+    }
     int? integer(String name) => event[name] is num && (event[name] as num).isFinite
         ? (event[name] as num).toInt() : null;
     double? dimension(String name) {
@@ -72,6 +97,13 @@ class KakaoDiagnostics {
           ? event['retryPending'] as bool : retryPending,
       width: dimension('containerWidth') ?? width,
       height: dimension('containerHeight') ?? height,
+      prepareReturn: boolean('prepareReturn', prepareReturn),
+      enginePrepared: boolean('enginePrepared', enginePrepared),
+      engineActive: boolean('engineActive', engineActive),
+      authCallback: enumeration('authCallback', KakaoAuthCallback.values, authCallback)!,
+      engineStateSummary: enumeration('engineStateSummary', KakaoEngineSummary.values, engineStateSummary),
+      stateDescriptionAvailable: boolean('stateDescriptionAvailable', stateDescriptionAvailable),
+      nativeTimeoutManaged: boolean('nativeTimeoutManaged', nativeTimeoutManaged) ?? nativeTimeoutManaged,
     );
   }
 }
